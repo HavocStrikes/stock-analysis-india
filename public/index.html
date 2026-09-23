@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StockLens India — Live NSE/BSE Stock Analysis</title>
+  <meta name="description" content="Live Indian stock analysis: NSE/BSE prices, interactive charts, fundamentals, screeners, SMA/RSI/MACD technicals and watchlists. Free, no login." />
+  <meta name="theme-color" content="#070b16" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" /></noscript>
+  <style>
+    :root{color-scheme:dark;--bg:#070b16;--surface:#0d1330;--surface-2:#141c44;--ink:#eef1fb;--ink-2:#a9b3cf;--ink-3:#75809f;--border:rgba(148,163,210,.14);--brand:#818cf8;--brand-2:#22d3ee;--up:#34d399;--down:#f87171;--radius:18px}
+    :root[data-theme='light']{color-scheme:light;--bg:#f3f5fc;--surface:#fff;--surface-2:#eceffd;--ink:#0d1430;--ink-2:#46536f;--ink-3:#7c869e;--border:rgba(13,20,48,.1);--brand:#4f46e5;--brand-2:#0891b2;--up:#059669;--down:#dc2626}
+    *{box-sizing:border-box}html,body{padding:0;margin:0}
+    body{font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;display:flex;flex-direction:column}
+    h1,h2,.brand,.val,.num{font-family:'Space Grotesk','Inter',sans-serif}
+    .wrap{width:min(1280px,calc(100% - 40px));margin:0 auto}
+    .topbar{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--border)}
+    .topbar-inner{display:flex;align-items:center;gap:14px;height:64px}
+    .brand{font-weight:700;font-size:18px;color:var(--ink);text-decoration:none;display:flex;align-items:center;gap:10px;cursor:pointer;white-space:nowrap}
+    .brand-mark{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,var(--brand),var(--brand-2));display:grid;place-items:center;font-size:17px;color:#fff;box-shadow:0 4px 18px -4px rgba(129,140,248,.6)}
+    .brand em{font-style:normal;background:linear-gradient(92deg,var(--brand),var(--brand-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .search{flex:1;max-width:480px;position:relative}
+    .search input{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:12px;padding:10px 14px 10px 38px;font-size:14px;outline:none}
+    .search input:focus{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 20%,transparent)}
+    .search .mag{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ink-3)}
+    .results{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:none;box-shadow:0 18px 50px -12px rgba(0,0,0,.6);z-index:60}
+    .results.open{display:block}
+    .results button{display:flex;width:100%;gap:10px;align-items:baseline;background:none;border:0;color:var(--ink);padding:10px 14px;cursor:pointer;font-size:13.5px;text-align:left}
+    .results button:hover{background:color-mix(in srgb,var(--brand) 14%,transparent)}
+    .results .sym{font-weight:700;color:var(--brand)}
+    .results .ex{margin-left:auto;color:var(--ink-3);font-size:11.5px}
+    .icon-btn{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--ink-2);font-size:16px}
+    .icon-btn:hover{border-color:var(--brand);color:var(--brand)}
+    main{flex:1;padding:26px 0 64px;position:relative;z-index:1}
+    .page-loading{display:grid;place-items:center;min-height:40vh}
+    .spinner{width:38px;height:38px;border-radius:50%;border:3px solid var(--surface-2);border-top-color:var(--brand);animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    footer{border-top:1px solid var(--border);padding:22px 0;color:var(--ink-3);font-size:12px;position:relative;z-index:1}
+    @media(max-width:640px){.topbar-inner{flex-wrap:wrap;height:auto;padding:10px 0}.search{max-width:none;flex-basis:100%;order:3}}
+  </style>
+  <script>!function(){try{var t=localStorage.getItem("sl-theme");if(t)document.documentElement.dataset.theme=t;else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.dataset.theme="light"}catch(e){}}();</script>
+  <link rel="preload" href="app.js" as="script" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="aurora" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" id="homeBtn"><span class="brand-mark">◈</span><span>StockLens <em>India</em></span></a>
+      <div class="search">
+        <span class="mag">⌕</span>
+        <input id="search" type="search" placeholder="Search NSE / BSE stocks — e.g. Reliance, HDFC, TCS…" autocomplete="off" aria-label="Search stocks" />
+        <div class="results" id="results"></div>
+      </div>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+    </div>
+  </header>
+  <div class="tape" id="tape" hidden><div class="tape-track" id="tapeTrack"></div></div>
+  <main id="app" class="wrap"><div class="page-loading"><div class="spinner"></div></div></main>
+  <footer><div class="wrap foot-grid"><span>Live prices via Yahoo Finance · Educational tool — <b>not investment advice</b>.</span><span id="footStamp"></span></div></footer>
+  <script src="config.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

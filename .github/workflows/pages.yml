@@ -1,0 +1,45 @@
+name: Deploy frontend to GitHub Pages
+
+# Serves the static UI (public/). The Python API (server.py) can't run on
+# Pages, so point the UI at a hosted API via the repo variable:
+#   gh variable set STOCKLENS_API_BASE --body "https://your-api-host:8000"
+# Leave it unset for same-origin serving (python3 server.py).
+on:
+  push:
+    branches: [main]
+    paths: ['public/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Point the frontend at the hosted API
+        run: |
+          if [ -n "${{ vars.STOCKLENS_API_BASE }}" ]; then
+            sed -i "s|apiBase: ''|apiBase: '${{ vars.STOCKLENS_API_BASE }}'|" public/config.js
+            echo "apiBase = ${{ vars.STOCKLENS_API_BASE }}"
+          else
+            echo "STOCKLENS_API_BASE not set — frontend will call same-origin /api."
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4
