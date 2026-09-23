@@ -130,6 +130,7 @@ def fundamentals(symbol):
     prof = res.get("assetProfile", {})
     emp = prof.get("fullTimeEmployees")
     return {
+        "marketCap": pick("price", "marketCap"),
         "peTrailing": pick("summaryDetail", "trailingPE"),
         "peForward": pick("summaryDetail", "forwardPE"),
         "pb": pick("defaultKeyStatistics", "priceToBook"),
@@ -156,6 +157,8 @@ def one_stock(sym):
         fund = fundamentals(sym)
         meta = daily["meta"]
         meta.update({k: v for k, v in day["meta"].items() if v is not None})
+        if fund and fund.get("marketCap"):
+            meta["marketCap"] = fund["marketCap"]
         return {"symbol": sym, "ok": True, "meta": meta, "fund": fund,
                 "intraday": day["points"], "daily": daily["points"],
                 "weekly": weekly["points"]}

@@ -293,21 +293,6 @@
     });
   }
 
-  function spark(canvas, closes, up) {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = canvas.clientWidth || 200, h = canvas.clientHeight || 44;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    const c = canvas.getContext('2d'); c.scale(dpr, dpr);
-    if (closes.length < 2) return;
-    const min = Math.min(...closes), max = Math.max(...closes), sp = max - min || 1;
-    const dark = document.documentElement.dataset.theme === 'dark';
-    const col = up ? (dark ? '#4ade80' : '#047857') : (dark ? '#f87171' : '#b91c1c');
-    const X = (i) => (i / (closes.length - 1)) * w, Y = (v) => h - 3 - ((v - min) / sp) * (h - 6);
-    c.beginPath();
-    closes.forEach((v, i) => i ? c.lineTo(X(i), Y(v)) : c.moveTo(X(0), Y(v)));
-    c.strokeStyle = col; c.lineWidth = 1.6; c.stroke();
-  }
-
   /* ---------- tables ---------- */
   let sortState = { key: 'mcap', dir: -1 };
   function mcapOf(q) { return q.meta.marketCap ?? q.meta.mCap ?? null; }
