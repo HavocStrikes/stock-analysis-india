@@ -1,66 +1,91 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>StockLens India — Live NSE/BSE Stock Analysis</title>
-  <meta name="description" content="Live Indian stock analysis: NSE/BSE prices, interactive charts, fundamentals, screeners, SMA/RSI/MACD technicals and watchlists. Free, no login." />
-  <meta name="theme-color" content="#070b16" />
+  <title>TickerTape India — NSE/BSE Terminal</title>
+  <meta name="description" content="NSE/BSE stock terminal: live quotations, candlestick charts, screeners, fundamentals and technicals. Free, no login." />
+  <meta name="theme-color" content="#f6f4ec" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" /></noscript>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" /></noscript>
   <style>
-    :root{color-scheme:dark;--bg:#070b16;--surface:#0d1330;--surface-2:#141c44;--ink:#eef1fb;--ink-2:#a9b3cf;--ink-3:#75809f;--border:rgba(148,163,210,.14);--brand:#818cf8;--brand-2:#22d3ee;--up:#34d399;--down:#f87171;--radius:18px}
-    :root[data-theme='light']{color-scheme:light;--bg:#f3f5fc;--surface:#fff;--surface-2:#eceffd;--ink:#0d1430;--ink-2:#46536f;--ink-3:#7c869e;--border:rgba(13,20,48,.1);--brand:#4f46e5;--brand-2:#0891b2;--up:#059669;--down:#dc2626}
+    :root{color-scheme:light;--bg:#f6f4ec;--panel:#fffdf7;--panel-2:#efe9d8;--ink:#181410;--ink-2:#5c564a;--ink-3:#8a8271;--line:#e0d9c3;--accent:#b45309;--accent-ink:#92400e;--up:#047857;--up-bg:#dff3e8;--down:#b91c1c;--down-bg:#fbe3e1;--amber:#f59e0b;--radius:8px}
+    :root[data-theme='dark']{color-scheme:dark;--bg:#0c0d10;--panel:#14161b;--panel-2:#1d2027;--ink:#ece7d9;--ink-2:#a39e8f;--ink-3:#6b665a;--line:#262932;--accent:#f5a524;--accent-ink:#fbbf24;--up:#34d399;--up-bg:rgba(52,211,153,.13);--down:#f87171;--down-bg:rgba(248,113,113,.12)}
     *{box-sizing:border-box}html,body{padding:0;margin:0}
-    body{font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;display:flex;flex-direction:column}
-    h1,h2,.brand,.val,.num{font-family:'Space Grotesk','Inter',sans-serif}
-    .wrap{width:min(1280px,calc(100% - 40px));margin:0 auto}
-    .topbar{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--border)}
-    .topbar-inner{display:flex;align-items:center;gap:14px;height:64px}
-    .brand{font-weight:700;font-size:18px;color:var(--ink);text-decoration:none;display:flex;align-items:center;gap:10px;cursor:pointer;white-space:nowrap}
-    .brand-mark{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,var(--brand),var(--brand-2));display:grid;place-items:center;font-size:17px;color:#fff;box-shadow:0 4px 18px -4px rgba(129,140,248,.6)}
-    .brand em{font-style:normal;background:linear-gradient(92deg,var(--brand),var(--brand-2));-webkit-background-clip:text;background-clip:text;color:transparent}
-    .search{flex:1;max-width:480px;position:relative}
-    .search input{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:12px;padding:10px 14px 10px 38px;font-size:14px;outline:none}
-    .search input:focus{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 20%,transparent)}
-    .search .mag{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ink-3)}
-    .results{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:none;box-shadow:0 18px 50px -12px rgba(0,0,0,.6);z-index:60}
+    body{font-family:'Inter',-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;font-feature-settings:'tnum'}
+    .mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+    #tape{background:#111;color:#f5f0df;overflow:hidden;white-space:nowrap;border-bottom:3px solid var(--accent)}
+    #tape .track{display:inline-flex;width:max-content;animation:tape 55s linear infinite;padding:7px 0}
+    @keyframes tape{to{transform:translateX(-50%)}}
+    .titem{display:inline-block;padding:0 20px;font-family:'IBM Plex Mono',monospace;font-size:12px}
+    .titem .u{color:#4ade80}.titem .d{color:#f87171}
+    .shell{display:flex;min-height:calc(100vh - 33px)}
+    aside.side{width:228px;flex:none;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;position:sticky;top:0;height:calc(100vh - 33px)}
+    .logo{padding:16px;font-weight:800;font-size:16px;letter-spacing:-.3px;border-bottom:1px solid var(--line);cursor:pointer}
+    .logo b{color:var(--accent)}
+    .logo small{display:block;font-size:10px;font-weight:600;color:var(--ink-3);letter-spacing:2px}
+    nav.nav{padding:10px;display:flex;flex-direction:column;gap:2px}
+    nav.nav button{display:flex;gap:10px;align-items:center;background:none;border:0;color:var(--ink-2);font-size:13.5px;font-weight:600;padding:9px 10px;border-radius:6px;cursor:pointer;text-align:left;font-family:inherit}
+    nav.nav button:hover{background:var(--panel-2);color:var(--ink)}
+    nav.nav button.on{background:var(--ink);color:var(--bg)}
+    .side-idx{padding:10px;border-top:1px solid var(--line);margin-top:auto;overflow:auto}
+    .side-idx h4{margin:4px 4px 8px;font-size:10px;letter-spacing:1.5px;color:var(--ink-3)}
+    .si{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:11.5px;padding:5px 4px;border-bottom:1px dotted var(--line)}
+    .si:last-child{border-bottom:0}
+    .maincol{flex:1;min-width:0;display:flex;flex-direction:column}
+    .topbar{display:flex;gap:10px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:20}
+    .topbar .search{flex:1;max-width:520px;position:relative}
+    .topbar input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:9px 12px 9px 34px;font-size:13.5px;font-family:'IBM Plex Mono',monospace;outline:none}
+    .topbar input:focus{border-color:var(--accent)}
+    .topbar .mag{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--ink-3);font-size:14px}
+    .results{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:none;box-shadow:0 16px 40px -12px rgba(0,0,0,.3);z-index:50}
     .results.open{display:block}
-    .results button{display:flex;width:100%;gap:10px;align-items:baseline;background:none;border:0;color:var(--ink);padding:10px 14px;cursor:pointer;font-size:13.5px;text-align:left}
-    .results button:hover{background:color-mix(in srgb,var(--brand) 14%,transparent)}
-    .results .sym{font-weight:700;color:var(--brand)}
-    .results .ex{margin-left:auto;color:var(--ink-3);font-size:11.5px}
-    .icon-btn{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--ink-2);font-size:16px}
-    .icon-btn:hover{border-color:var(--brand);color:var(--brand)}
-    main{flex:1;padding:26px 0 64px;position:relative;z-index:1}
-    .page-loading{display:grid;place-items:center;min-height:40vh}
-    .spinner{width:38px;height:38px;border-radius:50%;border:3px solid var(--surface-2);border-top-color:var(--brand);animation:spin .8s linear infinite}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    footer{border-top:1px solid var(--border);padding:22px 0;color:var(--ink-3);font-size:12px;position:relative;z-index:1}
-    @media(max-width:640px){.topbar-inner{flex-wrap:wrap;height:auto;padding:10px 0}.search{max-width:none;flex-basis:100%;order:3}}
+    .results button{display:flex;width:100%;gap:10px;align-items:baseline;background:none;border:0;color:var(--ink);padding:9px 12px;cursor:pointer;font-size:13px;text-align:left;font-family:'IBM Plex Mono',monospace}
+    .results button:hover{background:var(--panel-2)}
+    .results .ex{margin-left:auto;color:var(--ink-3);font-size:11px}
+    .icon-btn{width:36px;height:36px;border-radius:6px;display:grid;place-items:center;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink-2);font-size:15px;flex:none}
+    .icon-btn:hover{border-color:var(--accent);color:var(--accent)}
+    #modeBadge{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-3);white-space:nowrap}
+    main{flex:1;padding:20px;max-width:1180px;width:100%;margin:0 auto}
+    .page-loading{padding:80px 0;text-align:center;color:var(--ink-3);font-family:'IBM Plex Mono',monospace;font-size:13px}
+    footer{border-top:1px solid var(--line);padding:14px 20px;color:var(--ink-3);font-size:11.5px;font-family:'IBM Plex Mono',monospace;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--panel)}
+    .menu-btn{display:none}
+    @media(max-width:860px){
+      aside.side{position:fixed;z-index:40;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .22s ease;height:100vh;box-shadow:20px 0 60px rgba(0,0,0,.3)}
+      body.nav-open aside.side{transform:none}
+      .menu-btn{display:grid}
+      main{padding:14px}
+    }
   </style>
-  <script>!function(){try{var t=localStorage.getItem("sl-theme");if(t)document.documentElement.dataset.theme=t;else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.dataset.theme="light"}catch(e){}}();</script>
+  <script>!function(){try{var t=localStorage.getItem("tt-theme");if(t)document.documentElement.dataset.theme=t;else if(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.dataset.theme="dark"}catch(e){}}();</script>
   <link rel="preload" href="app.js" as="script" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="aurora" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
-  <header class="topbar">
-    <div class="wrap topbar-inner">
-      <a class="brand" id="homeBtn"><span class="brand-mark">◈</span><span>StockLens <em>India</em></span></a>
-      <div class="search">
-        <span class="mag">⌕</span>
-        <input id="search" type="search" placeholder="Search NSE / BSE stocks — e.g. Reliance, HDFC, TCS…" autocomplete="off" aria-label="Search stocks" />
-        <div class="results" id="results"></div>
+  <div id="tape" aria-hidden="true"><div class="track" id="tapeTrack"></div></div>
+  <div class="shell">
+    <aside class="side">
+      <div class="logo" id="homeBtn">TICKER<b>TAPE</b><small>INDIA · NSE/BSE</small></div>
+      <nav class="nav" id="mainNav">
+        <button data-nav="market">▦&nbsp; Market</button>
+        <button data-nav="screener">◈&nbsp; Screener</button>
+        <button data-nav="watch">★&nbsp; Watchlist</button>
+      </nav>
+      <div class="side-idx"><h4>INDICES</h4><div id="sideIdx"><div style="color:var(--ink-3);font-size:12px">…</div></div></div>
+    </aside>
+    <div class="maincol">
+      <div class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+        <div class="search"><span class="mag">⌕</span><input id="search" type="search" placeholder="SEARCH SYMBOL OR COMPANY — e.g. RELIANCE, HDFCBANK…" autocomplete="off" aria-label="Search stocks" /><div class="results" id="results"></div></div>
+        <span id="modeBadge">…</span>
+        <button class="icon-btn" id="themeBtn" title="Night / day" aria-label="Toggle theme">◐</button>
       </div>
-      <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+      <main id="app"><div class="page-loading">LOADING QUOTES ▮▮▮</div></main>
+      <footer><span>TICKERTAPE INDIA · DATA: YAHOO FINANCE · NOT INVESTMENT ADVICE</span><span id="footStamp"></span></footer>
     </div>
-  </header>
-  <div class="tape" id="tape" hidden><div class="tape-track" id="tapeTrack"></div></div>
-  <main id="app" class="wrap"><div class="page-loading"><div class="spinner"></div></div></main>
-  <footer><div class="wrap foot-grid"><span>Live prices via Yahoo Finance · Educational tool — <b>not investment advice</b>.</span><span id="footStamp"></span></div></footer>
+  </div>
   <script src="config.js" defer></script>
   <script src="app.js" defer></script>
 </body>

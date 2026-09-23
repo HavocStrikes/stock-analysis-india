@@ -1,0 +1,34 @@
+name: Refresh market snapshots
+
+# Pulls Yahoo Finance data server-side and commits static JSON snapshots,
+# so the GitHub Pages site loads live-ish data with zero backend.
+# Market hours IST (UTC+5:30): Mon–Fri 09:15–15:30  =>  cron 03:45–10:15 UTC.
+on:
+  schedule:
+    - cron: '*/30 3-10 * * 1-5'
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch snapshots
+        run: python3 scripts/fetch-data.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "stocklens-bot"
+          git config user.email "stocklens-bot@users.noreply.github.com"
+          git add public/data
+          git diff --staged --quiet || git commit -m "data: market snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push

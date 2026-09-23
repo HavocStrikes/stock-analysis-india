@@ -1,49 +1,62 @@
-# StockLens India — Live NSE/BSE Stock Analysis
+# TickerTape India — NSE/BSE Terminal
 
-A fast, beautiful, **zero-dependency** stock analysis website for Indian stocks.
-Search any NSE/BSE listing, get live price, interactive charts (1D→5Y),
-day/52-week ranges, SMA-20/50 + RSI-14 technicals and a local watchlist.
+A **newsprint-terminal** stock analysis site for Indian stocks.
+Light-first paper theme, mono numerals, dense quotation tables, candlestick
+charts, screeners and real fundamentals. Zero dependencies.
 
-## Stack (deliberately boring = fast)
+## What it does
 
-| Layer | Choice | Why |
-|---|---|---|
-| Backend | Python 3 stdlib (`http.server`) | No install, no API keys, runs anywhere |
-| Frontend | Vanilla HTML/CSS/JS + canvas charts | No build step, ~30KB total, instant load |
-| Data | Yahoo Finance chart/search APIs via server proxy | Free, keyless, covers NSE `.NS` + BSE `.BO` |
+- **Market** — sortable quotations table (24 tracked NSE stocks: LTP, change,
+  market cap, P/E, RSI, 52-week position), top gainers/losers, watchlist
+- **Screener** — oversold / overbought RSI, golden SMA trend, near-52w-high
+- **Stock pages** — candlestick chart (1D→5Y) with volume, MA 20/50, Bollinger,
+  crosshair O/H/L/C readout; RSI/MACD/MA technicals; valuation (P/E, P/B, EPS,
+  dividend, beta, ROE); company file with business summary
+- **Modes** — `● LIVE` when the Python API answers, `○ SNAPSHOT` (with time)
+  when reading baked-in data files
 
-No React, no Tailwind, no chart library — the UI is hand-built so first
-paint is one tiny HTML file + one CSS file + one JS file.
+## Stack
 
-## Run
+| Layer | Choice |
+|---|---|
+| Backend | Python 3 stdlib (`server.py`) — proxy + cache over Yahoo Finance |
+| Snapshots | `scripts/fetch-data.py` bakes `public/data/*.json` (cron: `data.yml`) |
+| Frontend | Vanilla HTML/CSS/JS + canvas — no build, ~15KB gzipped |
+
+## Run locally (full live mode)
 
 ```bash
 cd stock-analysis-india
 python3 server.py        # → http://localhost:8000
 ```
 
-Optional: `PORT=8080 python3 server.py`
+Any static server also works — the UI falls back to `public/data/`
+snapshots automatically: `python3 -m http.server --directory public 8000`
 
-## API (same-origin, proxied + cached)
+## Refresh snapshots manually
+
+```bash
+python3 scripts/fetch-data.py   # writes public/data/, 24 stocks + markets
+```
+
+## API (same-origin when `server.py` runs)
 
 | Endpoint | Cache | Description |
 |---|---|---|
 | `GET /api/search?q=tata` | 10 min | NSE/BSE symbol matches |
-| `GET /api/chart?symbol=RELIANCE.NS&range=1mo&interval=1d` | 1–5 min | OHLC points + quote meta |
+| `GET /api/chart?symbol=RELIANCE.NS&range=6mo` | 1–5 min | Full OHLCV points + meta |
+| `GET /api/batch?symbols=A,B&range=6mo` | 5 min | Many symbols, fundamentals-enriched |
+| `GET /api/fundamentals?symbol=` | 1 h | Valuation + profile (crumb-auth Yahoo) |
 | `GET /api/markets` | 5 min | Nifty 50, Sensex, Bank Nifty, VIX, USD/INR, gold, crude |
-| `GET /api/health` | — | Liveness probe |
-
-Ranges: `1d 5d 1mo 6mo 1y 5y`. If Yahoo is unreachable the server serves
-the last cached payload instead of erroring.
 
 ## Deploy
 
-- **Static frontend:** `public/` works on GitHub Pages as-is (needs a
-  same-origin `/api/*` — point it at a hosted `server.py` or add a tiny
-  worker later).
-- **Full app:** any VM/container with Python 3 — `python3 server.py`.
+GitHub Pages serves `public/` (`pages.yml`); the `data.yml` cron refreshes
+snapshots every 30 min in market hours so the static site stays fresh with
+no server. For true live mode, host `server.py` anywhere with Python 3 and
+set `STOCKLENS_API_BASE` to its URL (`config.js`).
 
 ## Disclaimer
 
-Educational tool — **not investment advice**. Prices may lag; verify with
-your broker before trading.
+Educational tool — **not investment advice**. Snapshot data can lag; verify
+with your broker before trading.

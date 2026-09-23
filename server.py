@@ -95,6 +95,7 @@ def quote_summary(symbol):
     prof = res.get("assetProfile", {})
     return {
         "symbol": symbol,
+        "marketCap": pick("price", "marketCap"),
         "peTrailing": pick("summaryDetail", "trailingPE"),
         "peForward": pick("summaryDetail", "forwardPE"),
         "pb": pick("defaultKeyStatistics", "priceToBook"),
@@ -185,16 +186,14 @@ def fetch_chart(symbol, range_, interval):
         c = closes[i] if i < len(closes) else None
         if c is None:
             continue
-        row = {"t": t * 1000, "c": round(c, 2)}
-        if range_ in ("1d", "5d"):
-            for k in ("open", "high", "low", "volume"):
-                arr = q0.get(k) or []
-                v = arr[i] if i < len(arr) else None
-                row[k[0]] = round(v, 2) if isinstance(v, (int, float)) else None
-        else:
-            arr = q0.get("volume") or []
+        row = {"t": t * 1000}
+        for k in ("open", "high", "low", "close", "volume"):
+            arr = q0.get(k) or []
             v = arr[i] if i < len(arr) else None
-            row["v"] = int(v) if isinstance(v, (int, float)) else None
+            if k == "volume":
+                row["v"] = int(v) if isinstance(v, (int, float)) else None
+            else:
+                row[k[0]] = round(v, 2) if isinstance(v, (int, float)) else None
         points.append(row)
     m = {
         "symbol": meta.get("symbol"), "currency": meta.get("currency"),
@@ -231,8 +230,14 @@ def api_batch(symbols, range_="6mo"):
     def one(sym):
         try:
             d = fetch_chart(sym, range_, None)
+            try:  # enrich with cached fundamentals (free after first warm)
+                f = cached(f"fund:{sym}", 3600, lambda: quote_summary(sym))
+                d["meta"]["marketCap"] = f.get("marketCap")
+                pe = f.get("peTrailing")
+            except Exception:
+                pe = None
             return {"symbol": sym, "ok": True, "meta": d["meta"],
-                    "closes": [p["c"] for p in d["points"]]}
+                    "points": d["points"], "pe": pe}
         except Exception as exc:
             return {"symbol": sym, "ok": False, "error": str(exc)[:120]}
 

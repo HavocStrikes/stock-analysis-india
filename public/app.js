@@ -1,30 +1,34 @@
-/* StockLens India — frontend. Zero dependencies. */
+/* TickerTape India — terminal frontend. Zero dependencies. */
 (() => {
   'use strict';
   const $ = (s) => document.querySelector(s);
   const app = $('#app');
   const API_BASE = (window.STOCKLENS && window.STOCKLENS.apiBase) || '';
 
-  const POPULAR = [
+  const UNIVERSE = [
     ['RELIANCE.NS', 'Reliance Industries', 'Energy'], ['HDFCBANK.NS', 'HDFC Bank', 'Banking'],
-    ['TCS.NS', 'TCS', 'IT'], ['INFY.NS', 'Infosys', 'IT'],
+    ['TCS.NS', 'Tata Consultancy Svcs', 'IT'], ['INFY.NS', 'Infosys', 'IT'],
     ['ICICIBANK.NS', 'ICICI Bank', 'Banking'], ['SBIN.NS', 'State Bank of India', 'Banking'],
     ['BHARTIARTL.NS', 'Bharti Airtel', 'Telecom'], ['ITC.NS', 'ITC', 'FMCG'],
-    ['LT.NS', 'Larsen & Toubro', 'Infra'], ['TATAMOTORS.NS', 'Tata Motors', 'Auto'],
+    ['LT.NS', 'Larsen & Toubro', 'Infra'], ['TMCV.NS', 'Tata Motors Comm Veh', 'Auto'],
     ['TATASTEEL.NS', 'Tata Steel', 'Metals'], ['MARUTI.NS', 'Maruti Suzuki', 'Auto'],
-    ['SUNPHARMA.NS', 'Sun Pharma', 'Pharma'], ['TITAN.NS', 'Titan', 'Consumer'],
-    ['AXISBANK.NS', 'Axis Bank', 'Banking'], ['KOTAKBANK.NS', 'Kotak Bank', 'Banking'],
-    ['HINDUNILVR.NS', 'HUL', 'FMCG'], ['NTPC.NS', 'NTPC', 'Power'],
-    ['POWERGRID.NS', 'Power Grid', 'Power'], ['ONGC.NS', 'ONGC', 'Energy'],
+    ['SUNPHARMA.NS', 'Sun Pharma', 'Pharma'], ['TITAN.NS', 'Titan Company', 'Consumer'],
+    ['AXISBANK.NS', 'Axis Bank', 'Banking'], ['KOTAKBANK.NS', 'Kotak Mahindra', 'Banking'],
+    ['HINDUNILVR.NS', 'Hindustan Unilever', 'FMCG'], ['NTPC.NS', 'NTPC', 'Power'],
+    ['POWERGRID.NS', 'Power Grid Corp', 'Power'], ['ONGC.NS', 'Oil & Nat Gas Corp', 'Energy'],
     ['BAJFINANCE.NS', 'Bajaj Finance', 'NBFC'], ['ADANIENT.NS', 'Adani Enterprises', 'Infra'],
     ['TATAPOWER.NS', 'Tata Power', 'Power'], ['WIPRO.NS', 'Wipro', 'IT'],
   ];
-  const IDX = [['Nifty 50', '^NSEI'], ['Sensex', '^BSESN'], ['Bank Nifty', '^NSEBANK']];
+  const IDX = ['^NSEI', '^BSESN', '^NSEBANK'];
   const RANGES = [['1d', '1D'], ['5d', '1W'], ['1mo', '1M'], ['6mo', '6M'], ['1y', '1Y'], ['5y', '5Y']];
-  let range = '1mo';
-  const show = { sma: true, bb: false, vol: true };
+  let range = '6mo';
+  const show = { ma: true, bb: false, vol: true };
+  const MODE = { live: true, at: null };
+  const UNI = {};
+  UNIVERSE.forEach(([s, n, sec]) => { UNI[s] = { name: n, sector: sec }; });
+  const short = (s) => s.replace('.NS', '').replace('.BO', '');
 
-  /* ---------- helpers ---------- */
+  /* ---------- format ---------- */
   const inr = (v, d = 2) => v == null || !isFinite(v) ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: d });
   const num = (v, d = 2) => v == null || !isFinite(v) ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: d });
   const bigInr = (v) => {
@@ -34,30 +38,97 @@
     return inr(v, 0);
   };
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const chgBox = (c) => c == null ? '—' : `<span class="chgbox ${(c >= 0 ? 'up' : 'down')}">${c >= 0 ? '+' : ''}${num(c)}%</span>`;
   const watch = {
-    get() { try { return JSON.parse(localStorage.getItem('sl-watch') || '[]'); } catch { return []; } },
+    get() { try { return JSON.parse(localStorage.getItem('tt-watch') || '[]'); } catch { return []; } },
     has(s) { return this.get().includes(s); },
     toggle(s) {
       let w = this.get();
       w = w.includes(s) ? w.filter((x) => x !== s) : [...w, s];
-      try { localStorage.setItem('sl-watch', JSON.stringify(w)); } catch {}
+      try { localStorage.setItem('tt-watch', JSON.stringify(w)); } catch {}
       return w.includes(s);
     },
   };
-  async function api(url) {
-    const r = await fetch(API_BASE + url);
-    if (!r.ok) throw new Error('API ' + r.status);
-    return r.json();
+
+  /* ---------- data: live API with static snapshot fallback ---------- */
+  const S = {};
+  async function sjson(p) {
+    if (!S[p]) {
+      const r = await fetch(p);
+      if (!r.ok) throw new Error('static ' + r.status);
+      S[p] = await r.json();
+    }
+    return S[p];
   }
-  function deferIdle(fn, wait = 2000) {
-    if ('requestIdleCallback' in window) requestIdleCallback(() => setTimeout(fn, 0), { timeout: wait });
-    else setTimeout(fn, Math.min(wait, 1000));
+  function paintMode() {
+    const b = $('#modeBadge');
+    if (b) {
+      b.textContent = MODE.live ? '● LIVE' : '○ SNAPSHOT' + (MODE.at ? ' ' + MODE.at : '');
+      b.style.color = MODE.live ? 'var(--up)' : 'var(--accent-ink)';
+    }
   }
-  if (API_BASE && /^https?:\/\//.test(API_BASE)) {
-    const lk = document.createElement('link');
-    lk.rel = 'preconnect'; lk.href = API_BASE; lk.crossOrigin = 'anonymous';
-    document.head.appendChild(lk);
+  async function api(path) {
+    try {
+      const ctl = new AbortController();
+      const to = setTimeout(() => ctl.abort(), 8000);
+      const r = await fetch(API_BASE + path, { signal: ctl.signal });
+      clearTimeout(to);
+      if (!r.ok) throw new Error('api ' + r.status);
+      MODE.live = true;
+      const d = await r.json();
+      if (d.fetchedAt) MODE.at = new Date(d.fetchedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      paintMode();
+      return d;
+    } catch (e) {
+      MODE.live = false;
+      paintMode();
+      return staticApi(path);
+    }
   }
+  async function staticApi(path) {
+    const u = new URL(path, 'http://x');
+    const p = u.pathname, q = Object.fromEntries(u.searchParams);
+    if (p === '/api/markets') {
+      const d = await sjson('data/markets.json');
+      MODE.at = new Date(d.fetchedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      paintMode();
+      return d;
+    }
+    if (p === '/api/batch') {
+      const Q = await sjson('data/quotes.json');
+      const want = (q.symbols || '').split(',');
+      MODE.at = new Date(Q.fetchedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      paintMode();
+      return {
+        fetchedAt: Q.fetchedAt,
+        quotes: Q.quotes.filter((x) => want.includes(x.symbol))
+          .map((x) => ({ symbol: x.symbol, ok: true, meta: x.meta, closes: x.closes, sector: x.sector, pe: x.pe })),
+      };
+    }
+    if (p === '/api/chart') {
+      const f = await sjson(`data/stocks/${q.symbol}.json`);
+      if (!f.ok) throw new Error('no snapshot');
+      const series = q.range === '1d' ? f.intraday : q.range === '5d' ? f.daily.slice(-5)
+        : q.range === '1mo' ? f.daily.slice(-22) : q.range === '6mo' ? f.daily.slice(-130)
+        : q.range === '1y' ? f.daily : f.weekly;
+      return { meta: f.meta, points: series, snapshot: true };
+    }
+    if (p === '/api/fundamentals') {
+      const f = await sjson(`data/stocks/${q.symbol}.json`);
+      if (!f.ok || !f.fund) throw new Error('no snapshot');
+      return { symbol: q.symbol, ...f.fund, marketCap: f.meta.marketCap };
+    }
+    if (p === '/api/search') {
+      const s = (q.q || '').toLowerCase();
+      return {
+        query: q.q,
+        results: UNIVERSE.filter(([sym, nm]) => (sym + ' ' + nm).toLowerCase().includes(s))
+          .slice(0, 8).map(([sym, nm]) => ({ symbol: sym, name: nm, exchange: 'NSE' })),
+      };
+    }
+    throw new Error('offline');
+  }
+  const closesOf = (q) => q.closes || (q.points || []).map((pt) => pt.c);
 
   /* ---------- math ---------- */
   const smaArr = (a, n) => a.map((_, i) => i + 1 < n ? null : a.slice(i - n + 1, i + 1).reduce((x, y) => x + y, 0) / n);
@@ -85,89 +156,77 @@
     const m = line[line.length - 1], s = sig[sig.length - 1];
     return { line: m, signal: s, hist: m - s };
   }
-  function boll(closes, n = 20, k = 2) {
-    if (closes.length < n) return null;
-    const w = closes.slice(-n);
-    const mid = w.reduce((a, b) => a + b, 0) / n;
-    const sd = Math.sqrt(w.reduce((a, b) => a + (b - mid) ** 2, 0) / n);
-    return { mid, up: mid + k * sd, lo: mid - k * sd };
-  }
-  function verdict(m, closes) {
-    const s20 = sma(closes, 20), s50 = sma(closes, 50), r = rsi(closes), mc = macd(closes);
-    let bull = 0, bear = 0;
-    const vote = (b) => b ? bull++ : bear++;
-    if (m.price != null && s20 != null) vote(m.price >= s20);
-    if (s20 != null && s50 != null) vote(s20 >= s50);
-    if (r != null) { if (r < 70) { if (r >= 30) { bull++; bear++; } else bull++; } else bear++; }
-    if (mc) vote(mc.hist >= 0);
-    if (m.changePct != null) vote(m.changePct >= 0);
-    if (bull >= bear + 2) return ['Bullish momentum', 'bull'];
-    if (bear >= bull + 2) return ['Bearish pressure', 'bear'];
-    return ['Neutral / mixed', 'flat'];
-  }
 
-  /* ---------- canvas ---------- */
-  function spark(canvas, closes, up) {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = canvas.clientWidth || 200, h = canvas.clientHeight || 46;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    const c = canvas.getContext('2d'); c.scale(dpr, dpr);
-    if (closes.length < 2) return;
-    const min = Math.min(...closes), max = Math.max(...closes), sp = max - min || 1;
-    const X = (i) => (i / (closes.length - 1)) * w, Y = (v) => h - 4 - ((v - min) / sp) * (h - 8);
-    const col = up ? '#34d399' : '#f87171';
-    const g = c.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, up ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    c.beginPath();
-    closes.forEach((v, i) => i ? c.lineTo(X(i), Y(v)) : c.moveTo(X(0), Y(v)));
-    c.strokeStyle = col; c.lineWidth = 1.8; c.lineJoin = 'round'; c.stroke();
-    c.lineTo(X(closes.length - 1), h); c.lineTo(X(0), h); c.closePath(); c.fillStyle = g; c.fill();
-  }
-
+  /* ---------- candlestick chart ---------- */
   function drawChart(canvas, points, tip) {
-    const dark = document.documentElement.dataset.theme !== 'light';
-    const grid = dark ? 'rgba(148,163,210,.13)' : 'rgba(13,20,48,.09)';
-    const txt = dark ? '#75809f' : '#7c869e';
+    const dark = document.documentElement.dataset.theme === 'dark';
+    const grid = dark ? 'rgba(236,231,217,.1)' : 'rgba(24,20,16,.08)';
+    const txt = dark ? '#6b665a' : '#8a8271';
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = canvas.clientWidth || 800, h = canvas.clientHeight || 360;
+    const w = canvas.clientWidth || 900, h = canvas.clientHeight || 380;
     canvas.width = w * dpr; canvas.height = h * dpr;
     const c = canvas.getContext('2d'); c.scale(dpr, dpr);
-    const padL = 8, padR = 66, padT = 14, padB = 24;
-    const volH = show.vol ? (h - padT - padB) * 0.18 : 0;
+    const padL = 6, padR = 70, padT = 12, padB = 22;
+    const volH = show.vol ? (h - padT - padB) * 0.16 : 0;
     const priceB = h - padB - volH - (show.vol ? 8 : 0);
-    const closes = points.map((p) => p.c);
-    const vols = points.map((p) => p.v || p.o != null ? (p.v ?? 0) : 0);
-    const min = Math.min(...closes), max = Math.max(...closes), sp = (max - min) || 1;
-    const lo = min - sp * 0.09, hi = max + sp * 0.09;
-    const X = (i) => padL + (i / (points.length - 1)) * (w - padL - padR);
-    const Y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (priceB - padT);
-    const up = closes[closes.length - 1] >= closes[0];
-    const col = up ? '#34d399' : '#f87171';
+    const hi = [], lo = [];
+    points.forEach((p, i) => {
+      hi.push(p.h ?? p.c); lo.push(p.l ?? p.c);
+    });
+    const mx = Math.max(...hi), mn = Math.min(...lo), sp = (mx - mn) || 1;
+    const loY = mn - sp * 0.07, hiY = mx + sp * 0.07;
+    const X = (i) => padL + ((i + 0.5) / points.length) * (w - padL - padR);
+    const Y = (v) => padT + (1 - (v - loY) / (hiY - loY)) * (priceB - padT);
     const css = getComputedStyle(document.documentElement);
-    const brand = css.getPropertyValue('--brand').trim() || '#818cf8';
+    const brand = css.getPropertyValue('--accent').trim() || '#b45309';
+    const upC = dark ? '#4ade80' : '#047857', dnC = dark ? '#f87171' : '#b91c1c';
 
-    c.font = '11px Inter,sans-serif';
+    c.font = '10.5px "IBM Plex Mono",monospace';
     c.strokeStyle = grid; c.fillStyle = txt; c.lineWidth = 1;
     for (let g = 0; g <= 4; g++) {
-      const v = lo + ((hi - lo) * g) / 4, y = Y(v);
+      const v = loY + ((hiY - loY) * g) / 4, y = Y(v);
       c.beginPath(); c.moveTo(padL, y); c.lineTo(w - padR, y); c.stroke();
-      const lbl = v >= 1000 ? '₹' + (v / 1000).toFixed(2) + 'k' : '₹' + v.toFixed(v < 10 ? 2 : 0);
-      c.fillText(lbl, w - padR + 6, y + 4);
+      c.fillText(v >= 1000 ? '₹' + (v / 1000).toFixed(2) + 'k' : '₹' + v.toFixed(v < 10 ? 2 : 0), w - padR + 6, y + 3);
     }
+    const cw = (w - padL - padR) / points.length;
+    const bw = Math.max(1.5, Math.min(14, cw * 0.62));
     // volume
     if (show.vol) {
+      const vols = points.map((p) => p.v || 0);
       const vmax = Math.max(...vols, 1);
-      const bw = Math.max(1, (w - padL - padR) / points.length - 1);
       points.forEach((p, i) => {
-        const v = vols[i]; if (!v) return;
-        const bh = (v / vmax) * volH;
-        const prev = i ? points[i - 1].c : p.c;
-        c.fillStyle = p.c >= prev ? 'rgba(52,211,153,.4)' : 'rgba(248,113,113,.4)';
+        if (!p.v) return;
+        const o = p.o ?? (i ? points[i - 1].c : p.c);
+        c.fillStyle = p.c >= o ? (dark ? 'rgba(74,222,128,.35)' : 'rgba(4,120,87,.3)') : (dark ? 'rgba(248,113,113,.35)' : 'rgba(185,28,28,.3)');
+        const bh = Math.max(1, (p.v / vmax) * volH);
         c.fillRect(X(i) - bw / 2, h - padB - bh, bw, bh);
       });
     }
+    // candles
+    points.forEach((p, i) => {
+      const o = p.o ?? (i ? points[i - 1].c : p.c);
+      const col = p.c >= o ? upC : dnC;
+      const yO = Y(o), yC = Y(p.c), yH = Y(p.h ?? p.c), yL = Y(p.l ?? p.c);
+      c.strokeStyle = col; c.fillStyle = col; c.lineWidth = Math.max(1, bw * 0.18);
+      c.beginPath(); c.moveTo(X(i), yH); c.lineTo(X(i), yL); c.stroke();
+      const top = Math.min(yO, yC), hh = Math.max(1.5, Math.abs(yC - yO));
+      if (Math.abs(p.c - o) < sp * 0.002) { c.lineWidth = 1.5; c.beginPath(); c.moveTo(X(i) - bw / 2, yC); c.lineTo(X(i) + bw / 2, yC); c.stroke(); }
+      else c.fillRect(X(i) - bw / 2, top, bw, hh);
+    });
+    // moving averages on closes
+    if (show.ma && points.length > 20) {
+      const closes = points.map((p) => p.c);
+      const line = (arr, color, dash) => {
+        c.beginPath(); c.setLineDash(dash);
+        arr.forEach((v, i) => { if (v != null) (i === 0 || arr[i - 1] == null ? c.moveTo(X(i), Y(v)) : c.lineTo(X(i), Y(v))); });
+        c.strokeStyle = color; c.lineWidth = 1.4; c.stroke(); c.setLineDash([]);
+      };
+      line(smaArr(closes, 20), brand, []);
+      if (points.length >= 50) line(smaArr(closes, 50), dark ? '#22d3ee' : '#0e7490', [5, 4]);
+    }
     // Bollinger
     if (show.bb && points.length >= 20) {
+      const closes = points.map((p) => p.c);
       const up1 = [], lo1 = [];
       closes.forEach((_, i) => {
         if (i < 19) { up1.push(null); lo1.push(null); return; }
@@ -176,38 +235,14 @@
         const sd = Math.sqrt(win.reduce((a, b) => a + (b - mid) ** 2, 0) / 20);
         up1.push(mid + 2 * sd); lo1.push(mid - 2 * sd);
       });
-      c.beginPath();
-      up1.forEach((v, i) => { if (v != null) (i === 19 ? c.moveTo(X(i), Y(v)) : c.lineTo(X(i), Y(v))); });
-      lo1.slice().reverse().forEach((v, j) => { const i = lo1.length - 1 - j; if (v != null) c.lineTo(X(i), Y(v)); });
-      c.closePath(); c.fillStyle = dark ? 'rgba(129,140,248,.1)' : 'rgba(79,70,229,.08)'; c.fill();
-      c.setLineDash([5, 4]); c.strokeStyle = brand; c.lineWidth = 1.1;
-      c.beginPath(); up1.forEach((v, i) => { if (v != null) (i === 19 ? c.moveTo(X(i), Y(v)) : c.lineTo(X(i), Y(v))); }); c.stroke();
-      c.beginPath(); lo1.forEach((v, i) => { if (v != null) (i === 19 ? c.moveTo(X(i), Y(v)) : c.lineTo(X(i), Y(v))); }); c.stroke();
+      c.setLineDash([5, 4]); c.strokeStyle = brand; c.lineWidth = 1;
+      [[up1], [lo1]].forEach(([arr]) => {
+        c.beginPath();
+        arr.forEach((v, i) => { if (v != null) (i === 19 ? c.moveTo(X(i), Y(v)) : c.lineTo(X(i), Y(v))); });
+        c.stroke();
+      });
       c.setLineDash([]);
     }
-    // SMA overlays
-    if (show.sma && points.length > 20) {
-      const draw = (arr, color, dash) => {
-        c.beginPath(); c.setLineDash(dash);
-        arr.forEach((v, i) => { if (v != null) { const k = i === 0 || arr[i - 1] == null ? 'm' : 'l'; k === 'm' ? c.moveTo(X(i), Y(v)) : c.lineTo(X(i), Y(v)); } });
-        c.strokeStyle = color; c.lineWidth = 1.3; c.stroke(); c.setLineDash([]);
-      };
-      draw(smaArr(closes, 20), brand, []);
-      if (points.length >= 50) draw(smaArr(closes, 50), '#fbbf24', [5, 4]);
-    }
-    // price area
-    const grad = c.createLinearGradient(0, padT, 0, priceB);
-    grad.addColorStop(0, up ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    c.beginPath();
-    points.forEach((p, i) => i ? c.lineTo(X(i), Y(p.c)) : c.moveTo(X(0), Y(p.c)));
-    c.strokeStyle = col; c.lineWidth = 2.2; c.lineJoin = 'round'; c.stroke();
-    c.lineTo(X(points.length - 1), priceB); c.lineTo(X(0), priceB); c.closePath();
-    c.fillStyle = grad; c.fill();
-    // last-price dot
-    const lx = X(points.length - 1), ly = Y(closes[closes.length - 1]);
-    c.beginPath(); c.arc(lx, ly, 4, 0, 7); c.fillStyle = col; c.fill();
-    c.beginPath(); c.arc(lx, ly, 7, 0, 7); c.strokeStyle = col; c.globalAlpha = .4; c.stroke(); c.globalAlpha = 1;
     // time labels
     c.fillStyle = txt;
     [0, Math.floor(points.length / 2), points.length - 1].forEach((i) => {
@@ -215,9 +250,8 @@
       const lbl = (range === '1d' || range === '5d')
         ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
         : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ((range === '1y' || range === '5y') ? " '" + String(d.getFullYear()).slice(2) : '');
-      c.fillText(lbl, Math.max(padL, Math.min(X(i) - 20, w - padR - 60)), h - 8);
+      c.fillText(lbl, Math.max(padL, Math.min(X(i) - 24, w - padR - 64)), h - 6);
     });
-    // crosshair data for mousemove
     canvas._geom = { X, Y, w, h, padL, padR, padT, padB, points };
     if (tip) tip.style.display = 'none';
   }
@@ -228,26 +262,29 @@
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const n = g.points.length;
-      let i = Math.round(((mx - g.padL) / (g.w - g.padL - g.padR)) * (n - 1));
+      let i = Math.round((((mx - g.padL) / (g.w - g.padL - g.padR)) * n) - 0.5);
       i = Math.max(0, Math.min(n - 1, i));
       drawChart(canvas, g.points, null);
       const c = canvas.getContext('2d');
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       c.save(); c.scale(dpr, dpr);
       const dark = document.documentElement.dataset.theme !== 'light';
-      c.strokeStyle = dark ? 'rgba(238,241,251,.35)' : 'rgba(13,20,48,.3)';
+      c.strokeStyle = dark ? 'rgba(236,231,217,.4)' : 'rgba(24,20,16,.35)';
       c.setLineDash([4, 4]); c.lineWidth = 1;
       c.beginPath(); c.moveTo(g.X(i), g.padT); c.lineTo(g.X(i), g.h - g.padB); c.stroke();
       c.setLineDash([]);
-      c.beginPath(); c.arc(g.X(i), g.Y(g.points[i].c), 4.5, 0, 7);
-      c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#818cf8'; c.lineWidth = 2; c.stroke();
+      const p = g.points[i];
+      c.beginPath(); c.arc(g.X(i), g.Y(p.c), 4, 0, 7); c.fillStyle = '#fff'; c.fill();
+      c.strokeStyle = '#b45309'; c.lineWidth = 2; c.stroke();
       c.restore();
-      const p = g.points[i], d = new Date(p.t);
+      const d = new Date(p.t);
+      const o = p.o ?? p.c;
+      const ch = p.c - o, up = ch >= 0;
       tip.style.display = 'block';
-      tip.innerHTML = `<b>${inr(p.c)}</b> · ${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${(range === '1d' || range === '5d') ? ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}${p.v ? `<br>Vol ${num(p.v, 0)}` : ''}`;
+      tip.innerHTML = `<b>${inr(p.c)}</b> <span style="color:${up ? '#4ade80' : '#f87171'}">${up ? '+' : ''}${num(ch)} (${num((ch / o) * 100)}%)</span><br>O ${num(o)} H ${num(p.h ?? p.c)} L ${num(p.l ?? p.c)} C ${num(p.c)}<br>${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${(range === '1d' || range === '5d') ? ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}${p.v ? ' · VOL ' + num(p.v, 0) : ''}`;
       const wrap = canvas.parentElement.getBoundingClientRect();
       let lx = e.clientX - wrap.left + 16, ly = e.clientY - wrap.top - 10;
-      if (lx + 170 > wrap.width) lx -= 190;
+      if (lx + 220 > wrap.width) lx -= 240;
       tip.style.left = lx + 'px'; tip.style.top = Math.max(4, ly) + 'px';
     });
     canvas.addEventListener('mouseleave', () => {
@@ -256,330 +293,297 @@
     });
   }
 
-  /* ---------- shared UI ---------- */
-  function revealSoon() {
-    const io = new IntersectionObserver((es) => es.forEach((e) => {
-      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
-    }), { threshold: 0.08 });
-    document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+  function spark(canvas, closes, up) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = canvas.clientWidth || 200, h = canvas.clientHeight || 44;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    const c = canvas.getContext('2d'); c.scale(dpr, dpr);
+    if (closes.length < 2) return;
+    const min = Math.min(...closes), max = Math.max(...closes), sp = max - min || 1;
+    const dark = document.documentElement.dataset.theme === 'dark';
+    const col = up ? (dark ? '#4ade80' : '#047857') : (dark ? '#f87171' : '#b91c1c');
+    const X = (i) => (i / (closes.length - 1)) * w, Y = (v) => h - 3 - ((v - min) / sp) * (h - 6);
+    c.beginPath();
+    closes.forEach((v, i) => i ? c.lineTo(X(i), Y(v)) : c.moveTo(X(0), Y(v)));
+    c.strokeStyle = col; c.lineWidth = 1.6; c.stroke();
   }
-  function countUp(el) {
-    const target = parseFloat(el.dataset.count);
-    if (!isFinite(target)) return;
-    const dec = el.dataset.dec ? +el.dataset.dec : 0;
-    const t0 = performance.now(), dur = 1100;
-    const step = (t) => {
-      const k = Math.min(1, (t - t0) / dur), e = 1 - (1 - k) ** 3;
-      el.textContent = (target * e).toLocaleString('en-IN', { maximumFractionDigits: dec, minimumFractionDigits: dec });
-      if (k < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }
-  function setFoot(t) { const f = $('#footStamp'); if (f) f.textContent = t; }
 
-  async function loadTape() {
+  /* ---------- tables ---------- */
+  let sortState = { key: 'mcap', dir: -1 };
+  function mcapOf(q) { return q.meta.marketCap ?? q.meta.mCap ?? null; }
+  function rsiOf(q) { return rsi(closesOf(q)); }
+  function wpos(q) {
+    const { week52High: h, week52Low: l, price: p } = q.meta;
+    return (h && l && p && h > l) ? ((p - l) / (h - l)) * 100 : null;
+  }
+  function quoteTable(rows, opts = {}) {
+    const star = opts.star ? '<th></th>' : '';
+    return `<div class="tbl-wrap"><table class="q"><thead><tr>${star}
+      ${[['sym', 'SYMBOL'], ['price', 'LTP'], ['chg', 'CHG%'], ['mcap', 'MKT CAP'], ['pe', 'P/E'], ['rsi', 'RSI'], ['wpos', '52W%']]
+        .map(([k, l]) => `<th class="sortable" data-sort="${k}">${l}${sortState.key === k ? (sortState.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}
+      </tr></thead><tbody>
+      ${rows.map((q) => {
+        const nm = (UNI[q.symbol] || {}).name || q.symbol;
+        const up = (q.meta.changePct ?? 0) >= 0;
+        const r = rsiOf(q);
+        return `<tr data-sym="${q.symbol}">${opts.star ? `<td><button class="star ${watch.has(q.symbol) ? 'on' : ''}" data-star="${q.symbol}">★</button></td>` : ''}
+        <td><span class="sym">${short(q.symbol)}</span><span class="nm">${esc(nm)}${q.sector ? ` · <span class="sec-tag">${esc(q.sector)}</span>` : ''}</span></td>
+        <td>${inr(q.meta.price)}</td>
+        <td>${chgBox(q.meta.changePct)}</td>
+        <td>${bigInr(mcapOf(q))}</td>
+        <td>${q.pe != null ? num(q.pe) : '—'}</td>
+        <td style="color:${r == null ? '' : r < 30 ? 'var(--up)' : r > 70 ? 'var(--down)' : ''}">${r ?? '—'}</td>
+        <td>${wpos(q) != null ? wpos(q).toFixed(0) + '%' : '—'}</td></tr>`;
+      }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--ink-3)">NO DATA</td></tr>'}</tbody></table></div>`;
+  }
+  function sortRows(rows) {
+    const { key, dir } = sortState;
+    const val = (q) => key === 'sym' ? q.symbol : key === 'price' ? (q.meta.price ?? -1e18)
+      : key === 'chg' ? (q.meta.changePct ?? -1e9) : key === 'mcap' ? (mcapOf(q) ?? -1)
+      : key === 'pe' ? (q.pe ?? 1e18) : key === 'rsi' ? (rsiOf(q) ?? -1) : (wpos(q) ?? -1);
+    return rows.slice().sort((a, b) => {
+      const d = val(a) - val(b);
+      return (typeof val(a) === 'string' ? String(val(a)).localeCompare(String(val(b))) : d) * dir;
+    });
+  }
+  function bindTable(el) {
+    el.querySelectorAll('th.sortable').forEach((th) => th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      if (sortState.key === k) sortState.dir *= -1;
+      else sortState = { key: k, dir: k === 'sym' ? 1 : -1 };
+      route(true);
+    }));
+    el.querySelectorAll('tr[data-sym]').forEach((tr) => tr.addEventListener('click', (e) => {
+      if (e.target.closest('[data-star]')) return;
+      location.hash = '#/' + tr.dataset.sym;
+    }));
+    el.querySelectorAll('[data-star]').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      b.classList.toggle('on', watch.toggle(b.dataset.star));
+    }));
+  }
+
+  /* ---------- chrome: tape + sidebar ---------- */
+  async function loadChrome() {
     try {
       const [mk, b] = await Promise.all([
         api('/api/markets'),
-        api('/api/batch?symbols=' + POPULAR.map((p) => p[0]).join(',') + '&range=5d'),
+        api('/api/batch?symbols=' + UNIVERSE.map((x) => x[0]).join(',') + '&range=5d'),
       ]);
       const items = [
         ...mk.quotes.map((q) => ({ n: q.name, p: q.symbol === 'INR=X' ? num(q.price) : q.symbol.endsWith('=F') ? '$' + num(q.price) : inr(q.price), c: q.changePct })),
-        ...b.quotes.filter((q) => q.ok).map((q) => {
-          const nm = (POPULAR.find((p) => p[0] === q.symbol) || [])[1] || q.symbol;
-          return { n: nm, p: inr(q.meta.price), c: q.meta.changePct };
-        }),
+        ...b.quotes.filter((q) => q.ok).map((q) => ({ n: short(q.symbol), p: inr(q.meta.price), c: q.meta.changePct })),
       ].filter((x) => x.c != null);
-      const html = items.map((x) => {
-        const up = x.c >= 0;
-        return `<span class="titem"><span class="n">${esc(x.n)}</span><span class="p">${x.p}</span><span class="c ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${num(Math.abs(x.c))}%</span></span>`;
-      }).join('');
-      const track = $('#tapeTrack');
-      track.innerHTML = html + html; // duplicate for seamless loop
-      $('#tape').hidden = false;
-      if (mk.fetchedAt) setFoot('Market data as of ' + new Date(mk.fetchedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ' IST');
-    } catch { /* tape optional */ }
+      $('#tapeTrack').innerHTML = items.map((x) => `<span class="titem">${esc(x.n)} ${x.p} <span class="${x.c >= 0 ? 'u' : 'd'}">${x.c >= 0 ? '▲' : '▼'}${num(Math.abs(x.c))}%</span></span>`).join('').repeat(2);
+      $('#sideIdx').innerHTML = mk.quotes.slice(0, 4).map((q) => `<div class="si"><span>${esc(q.name.toUpperCase())}</span><span class="${(q.changePct ?? 0) >= 0 ? 'up' : 'down'}" style="font-weight:600">${num(q.price, q.price > 5000 ? 0 : 2)} ${(q.changePct ?? 0) >= 0 ? '▲' : '▼'}${num(Math.abs(q.changePct ?? 0))}</span></div>`).join('');
+      const f = $('#footStamp');
+      if (f) f.textContent = MODE.live ? 'LIVE FEED' : 'SNAPSHOT ' + (MODE.at || '');
+    } catch { /* chrome optional */ }
   }
 
-  /* ---------- home ---------- */
-  async function home() {
-    app.innerHTML = `
-      <section class="hero reveal">
-        <span class="kicker"><span class="pulse"></span>Live · NSE &amp; BSE</span>
-        <h1>Every Indian stock,<br /><span class="grad">decoded beautifully</span></h1>
-        <p>Real-time prices, cinematic charts, true fundamentals and institutional-grade technicals — screener, movers, RSI signals and watchlist included. Free forever, no login.</p>
-        <div class="hero-stats">
-          <div class="hstat"><div class="n" data-count="${POPULAR.length}">0</div><div class="l">Stocks tracked</div></div>
-          <div class="hstat"><div class="n" data-count="7">0</div><div class="l">Market indices</div></div>
-          <div class="hstat"><div class="n" data-count="6">0</div><div class="l">Chart timeframes</div></div>
-        </div>
-        <div class="chips">${['RELIANCE.NS|Reliance', 'HDFCBANK.NS|HDFC Bank', 'TCS.NS|TCS', 'INFY.NS|Infosys', 'TATAMOTORS.NS|Tata Motors', 'SBIN.NS|SBI', 'BAJFINANCE.NS|Bajaj Finance'].map((s) => { const [sym, n] = s.split('|'); return `<button class="chip" data-sym="${sym}">${n} →</button>`; }).join('')}</div>
-      </section>
-      <div class="section-head reveal"><h2><span class="ico">◈</span>Market overview</h2><span class="hint">live indices</span></div>
-      <div class="idx-grid" id="idxGrid">${IDX.map(() => '<div class="skel" style="min-height:150px"></div>').join('')}</div>
-      <div class="section-head reveal"><h2><span class="ico">⚡</span>Top movers today</h2><span class="hint">from tracked stocks</span></div>
-      <div class="movers"><div class="mover-panel reveal"><h3>🟢 Top gainers</h3><div id="gainers"><div class="skel" style="min-height:120px"></div></div></div>
-      <div class="mover-panel reveal"><h3>🔴 Top losers</h3><div id="losers"><div class="skel" style="min-height:120px"></div></div></div></div>
-      <div class="section-head reveal"><h2><span class="ico">🔍</span>Smart screener</h2><span class="hint">auto signals · daily closes</span></div>
-      <div class="screen-grid" id="screens">${'<div class="skel"></div>'.repeat(4)}</div>
-      <div class="section-head reveal"><h2><span class="ico">★</span>All tracked stocks</h2><span class="hint" id="gridHint">loading…</span></div>
-      <div class="grid" id="grid">${POPULAR.map(() => '<div class="skel"></div>').join('')}</div>
-      <div class="section-head reveal"><h2><span class="ico">👁</span>Your watchlist</h2><span class="hint">saved on this device</span></div>
-      <div class="grid" id="watchGrid"></div>`;
-    app.querySelectorAll('[data-sym]').forEach((b) => b.addEventListener('click', () => location.hash = '#/' + b.dataset.sym));
-    document.querySelectorAll('.hstat .n').forEach(countUp);
-    revealSoon();
+  /* ---------- pages ---------- */
+  function dateline(fetchedAt) {
+    const d = fetchedAt ? new Date(fetchedAt) : new Date();
+    return `<div class="dateline"><span>${d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase()}</span><span>NSE · BSE</span><span>PRICES IN <b>INR</b></span><span>${MODE.live ? '● LIVE' : '○ SNAPSHOT ' + (MODE.at || '')}</span></div>`;
+  }
+
+  let homeCache = null;
+  async function marketPage() {
+    app.innerHTML = dateline() + `
+      <div class="sec"><div class="sec-head"><h2>QUOTATIONS</h2><span class="sub">24 TRACKED STOCKS</span><span class="right" id="qHint">LOADING…</span></div>
+      <div id="qTbl" style="margin-top:12px"><div class="skel"></div></div></div>
+      <div class="sec"><div class="sec-head"><h2>MOVERS</h2><span class="sub">TODAY</span></div>
+      <div class="split" style="margin-top:12px"><div class="mpanel"><h3 class="g">▲ TOP GAINERS</h3><div id="gTbl"></div></div>
+      <div class="mpanel"><h3 class="r">▼ TOP LOSERS</h3><div id="lTbl"></div></div></div></div>
+      <div class="sec"><div class="sec-head"><h2>WATCHLIST</h2><span class="sub">THIS DEVICE</span></div><div id="wTbl" style="margin-top:12px"></div></div>`;
     renderWatch();
-
     try {
-      const [mk, batch, idxBatch] = await Promise.all([
-        api('/api/markets'),
-        api('/api/batch?symbols=' + POPULAR.map((p) => p[0]).join(',') + '&range=6mo'),
-        api('/api/batch?symbols=' + IDX.map((p) => p[1]).join(',') + '&range=1mo'),
-      ]);
-      paintIndices(mk, idxBatch);
-      const ok = batch.quotes.filter((q) => q.ok);
-      paintMovers(ok);
-      paintScreens(ok);
-      paintGrid(ok);
-      const hint = $('#gridHint');
-      if (hint) hint.textContent = `${ok.length}/${POPULAR.length} live`;
+      if (!homeCache) {
+        const b = await api('/api/batch?symbols=' + UNIVERSE.map((x) => x[0]).join(',') + '&range=6mo');
+        homeCache = b;
+      }
+      const ok = homeCache.quotes.filter((q) => q.ok).map((q) => ({ ...q, sector: q.sector || (UNI[q.symbol] || {}).sector }));
+      const hint = $('#qHint');
+      if (hint) hint.textContent = `${ok.length}/${UNIVERSE.length} LIVE`;
+      const sorted = sortRows(ok);
+      $('#qTbl').innerHTML = quoteTable(sorted, { star: true });
+      bindTable($('#qTbl'));
+      const byChg = ok.slice().sort((a, b) => (b.meta.changePct ?? -99) - (a.meta.changePct ?? -99));
+      const mini = (rows) => `<table class="q"><tbody>${rows.map((q) => `<tr data-sym="${q.symbol}"><td><span class="sym">${short(q.symbol)}</span><span class="nm">${esc((UNI[q.symbol] || {}).name || '')}</span></td><td>${inr(q.meta.price)}</td><td>${chgBox(q.meta.changePct)}</td></tr>`).join('')}</tbody></table>`;
+      $('#gTbl').innerHTML = mini(byChg.slice(0, 5));
+      $('#lTbl').innerHTML = mini(byChg.slice(-5).reverse());
+      document.querySelectorAll('#gTbl tr,#lTbl tr').forEach((tr) => tr.addEventListener('click', () => location.hash = '#/' + tr.dataset.sym));
     } catch {
-      const g = $('#grid');
-      if (g) g.innerHTML = '<div class="empty">Market data is offline — please retry in a moment.</div>';
+      $('#qTbl').innerHTML = '<div class="empty">QUOTES OFFLINE — RETRY IN A MOMENT</div>';
     }
   }
 
-  function paintIndices(mk, idxBatch) {
-    const g = $('#idxGrid');
-    if (!g) return;
-    const bySym = {};
-    (idxBatch.quotes || []).forEach((q) => { if (q.ok) bySym[q.symbol] = q; });
-    g.innerHTML = mk.quotes.filter((q) => ['^NSEI', '^BSESN', '^NSEBANK'].includes(q.symbol)).map((q) => {
-      const up = (q.changePct ?? 0) >= 0;
-      const px = q.symbol === 'INR=X' ? num(q.price) : inr(q.price, q.price > 5000 ? 2 : 2);
-      return `<div class="idx-card reveal in"><div class="n">${esc(q.name)}</div>
-        <div class="p">${px}</div>
-        <div class="c ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${num(Math.abs(q.changePct ?? 0))}% today</div>
-        <canvas data-idx="${esc(q.symbol)}"></canvas></div>`;
-    }).join('');
-    g.querySelectorAll('canvas').forEach((cv) => {
-      const q = bySym[cv.dataset.idx];
-      if (q) spark(cv, q.closes, (q.meta.changePct ?? 0) >= 0);
-    });
-  }
-
-  function moverRow(q, i) {
-    const nm = (POPULAR.find((p) => p[0] === q.symbol) || [])[1] || q.symbol;
-    const up = (q.meta.changePct ?? 0) >= 0;
-    return `<button class="mrow" data-sym="${q.symbol}"><span class="rk">${i + 1}</span>
-      <span class="who"><span class="s">${esc(nm)}</span><br><span class="nm">${esc(q.symbol)}</span></span>
-      <span class="pv"><span class="px">${inr(q.meta.price)}</span><br><span class="ch ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${num(Math.abs(q.meta.changePct ?? 0))}%</span></span></button>`;
-  }
-  function paintMovers(ok) {
-    const sorted = ok.slice().sort((a, b) => (b.meta.changePct ?? -99) - (a.meta.changePct ?? -99));
-    const g = $('#gainers'), l = $('#losers');
-    if (g) {
-      g.innerHTML = sorted.slice(0, 5).map(moverRow).join('');
-      g.querySelectorAll('[data-sym]').forEach((el) => el.addEventListener('click', () => location.hash = '#/' + el.dataset.sym));
+  async function screenerPage() {
+    app.innerHTML = dateline() + `
+      <div class="sec"><div class="sec-head"><h2>SCREENER</h2><span class="sub">SIGNALS FROM DAILY CLOSES</span></div>
+      <div class="ledger" id="ledgers" style="margin-top:12px">${'<div class="skel"></div>'.repeat(4)}</div></div>`;
+    try {
+      if (!homeCache) {
+        const b = await api('/api/batch?symbols=' + UNIVERSE.map((x) => x[0]).join(',') + '&range=6mo');
+        homeCache = b;
+      }
+      const ok = homeCache.quotes.filter((q) => q.ok && closesOf(q).length >= 55);
+      const withR = ok.map((q) => ({ q, r: rsi(closesOf(q)) })).filter((x) => x.r != null);
+      const row = (qq, v) => `<tr data-sym="${qq.symbol}"><td><span class="sym">${short(qq.symbol)}</span><span class="nm">${esc((UNI[qq.symbol] || {}).name || '')}</span></td><td>${inr(qq.meta.price)}</td><td class="mono">${v}</td></tr>`;
+      const blocks = [
+        ['RSI < 35 · OVERSOLD', withR.filter((x) => x.r < 35).sort((a, b) => a.r - b.r).slice(0, 6).map((x) => row(x.q, 'RSI ' + x.r))],
+        ['RSI > 70 · OVERBOUGHT', withR.filter((x) => x.r > 70).sort((a, b) => b.r - a.r).slice(0, 6).map((x) => row(x.q, 'RSI ' + x.r))],
+        ['GOLDEN TREND · P>SMA20>SMA50', ok.filter((q) => {
+          const cl = closesOf(q), s20 = sma(cl, 20), s50 = sma(cl, 50);
+          return s20 && s50 && s20 > s50 && q.meta.price > s20;
+        }).slice(0, 6).map((q) => row(q, chgBox(q.meta.changePct)))],
+        ['NEAR 52W HIGH · ≤8% OFF TOP', ok.filter((q) => {
+          const { week52High: h, week52Low: l, price: p } = q.meta;
+          return h && l && p && h > l && (h - p) / (h - l) < 0.08;
+        }).slice(0, 6).map((q) => row(q, num(wpos(q), 0) + '%'))],
+      ];
+      $('#ledgers').innerHTML = blocks.map(([t, rows]) => `<div class="block"><h3>${t}<span class="count">${rows.length}</span></h3><table class="q"><tbody>${rows.join('') || '<tr><td style="text-align:center;color:var(--ink-3)">NO MATCHES</td></tr>'}</tbody></table></div>`).join('');
+      document.querySelectorAll('#ledgers tr[data-sym]').forEach((tr) => tr.addEventListener('click', () => location.hash = '#/' + tr.dataset.sym));
+    } catch {
+      $('#ledgers').innerHTML = '<div class="empty">SCREENER OFFLINE — RETRY IN A MOMENT</div>';
     }
-    if (l) {
-      l.innerHTML = sorted.slice(-5).reverse().map(moverRow).join('');
-      l.querySelectorAll('[data-sym]').forEach((el) => el.addEventListener('click', () => location.hash = '#/' + el.dataset.sym));
-    }
-  }
-
-  function paintScreens(ok) {
-    const box = $('#screens');
-    if (!box) return;
-    const withCloses = ok.filter((q) => q.closes && q.closes.length >= 55);
-    const rsiList = withCloses.map((q) => ({ q, r: rsi(q.closes) })).filter((x) => x.r != null);
-    const oversold = rsiList.filter((x) => x.r < 35).sort((a, b) => a.r - b.r).slice(0, 4);
-    const overbought = rsiList.filter((x) => x.r > 70).sort((a, b) => b.r - a.r).slice(0, 4);
-    const golden = withCloses.filter((q) => {
-      const s20 = sma(q.closes, 20), s50 = sma(q.closes, 50);
-      return s20 != null && s50 != null && s20 > s50 && q.meta.price > s20;
-    }).slice(0, 4);
-    const nearHigh = ok.filter((q) => {
-      const { week52High: h, week52Low: l, price: p } = q.meta;
-      return h && l && p && h > l && (h - p) / (h - l) < 0.08;
-    }).slice(0, 4);
-    const nm = (s) => (POPULAR.find((p) => p[0] === s) || [s, s])[1];
-    const row = (sym, v) => `<div class="srow" data-sym="${sym}"><span class="s">${esc(nm(sym))}</span><span class="v">${v}</span></div>`;
-    const cards = [
-      ['Oversold bounce candidates', 'RSI(14) below 35', 'green', oversold.map((x) => row(x.q.symbol, 'RSI ' + x.r))],
-      ['Overbought — caution', 'RSI(14) above 70', 'red', overbought.map((x) => row(x.q.symbol, 'RSI ' + x.r))],
-      ['Golden trend', 'price > SMA20 > SMA50', 'blue', golden.map((q) => row(q.symbol, inr(q.meta.price, 0)))],
-      ['Near 52-week high', 'within 8% of the top', 'amber', nearHigh.map((q) => row(q.symbol, num(q.meta.changePct ?? 0) + '%'))],
-    ];
-    box.innerHTML = cards.map(([t, s, tag, rows]) => `<div class="screen-card reveal in"><h3>${t} <span class="tag ${tag}">${rows.length}</span></h3><p class="sub">${s}</p>${rows.join('') || '<div class="empty" style="padding:16px">No matches right now</div>'}</div>`).join('');
-    box.querySelectorAll('[data-sym]').forEach((el) => el.addEventListener('click', () => location.hash = '#/' + el.dataset.sym));
-  }
-
-  function paintGrid(ok) {
-    const g = $('#grid');
-    if (!g) return;
-    const bySym = {};
-    ok.forEach((q) => { bySym[q.symbol] = q; });
-    g.innerHTML = POPULAR.map(([sym, name, sec]) => {
-      const q = bySym[sym];
-      if (!q) return `<div class="stock-card"><div class="sym">${sym.replace('.NS', '')}</div><div class="nm">${esc(name)}</div><div class="empty" style="padding:12px">offline</div></div>`;
-      const up = (q.meta.changePct ?? 0) >= 0;
-      const starred = watch.has(sym) ? ' on' : '';
-      return `<div class="stock-card reveal in" data-sym="${sym}" tabindex="0">
-        <button class="star${starred}" data-star="${sym}" title="Watchlist">★</button>
-        <div class="row"><div><div class="sec">${esc(sec)}</div><div class="sym">${sym.replace('.NS', '')}</div><div class="nm">${esc(name)}</div></div>
-        <span class="chg ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${num(Math.abs(q.meta.changePct ?? 0))}%</span></div>
-        <div class="px">${inr(q.meta.price)}</div>
-        <canvas class="mini"></canvas></div>`;
-    }).join('');
-    g.querySelectorAll('canvas.mini').forEach((cv, i) => {
-      const q = bySym[POPULAR[i][0]];
-      if (q) spark(cv, q.closes.slice(-30), (q.meta.changePct ?? 0) >= 0);
-    });
-    g.querySelectorAll('[data-star]').forEach((b) => b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const on = watch.toggle(b.dataset.star);
-      b.classList.toggle('on', on);
-      renderWatch();
-    }));
-    g.querySelectorAll('.stock-card[data-sym]').forEach((el) => el.addEventListener('click', () => location.hash = '#/' + el.dataset.sym));
   }
 
   async function renderWatch() {
-    const g = $('#watchGrid');
+    const g = $('#wTbl');
     if (!g) return;
     const w = watch.get();
-    if (!w.length) { g.innerHTML = '<div class="empty">Star any stock ★ to pin it here.</div>'; return; }
+    if (!w.length) { g.innerHTML = '<div class="empty">STAR ★ ANY ROW TO PIN IT HERE</div>'; return; }
     try {
       const b = await api('/api/batch?symbols=' + w.join(',') + '&range=5d');
-      g.innerHTML = b.quotes.map((q) => q.ok
-        ? `<div class="stock-card reveal in" data-sym="${q.symbol}"><div class="sym">${esc(q.symbol.replace('.NS', '').replace('.BO', ''))}</div>
-           <div class="px">${inr(q.meta.price)}</div>
-           <span class="chg ${(q.meta.changePct ?? 0) >= 0 ? 'up' : 'down'}">${num(q.meta.changePct ?? 0)}% today</span></div>`
-        : `<div class="stock-card"><div class="sym">${esc(q.symbol)}</div><div class="empty" style="padding:12px">offline</div></div>`).join('');
-      g.querySelectorAll('[data-sym]').forEach((el) => el.addEventListener('click', () => location.hash = '#/' + el.dataset.sym));
-    } catch { g.innerHTML = '<div class="empty">Watchlist is offline — retry soon.</div>'; }
+      const ok = b.quotes.filter((q) => q.ok);
+      g.innerHTML = quoteTable(sortRows(ok), { star: true });
+      bindTable(g);
+    } catch { g.innerHTML = '<div class="empty">WATCHLIST OFFLINE</div>'; }
+  }
+  async function watchPage() {
+    app.innerHTML = dateline() + `<div class="sec"><div class="sec-head"><h2>WATCHLIST</h2><span class="sub">SAVED ON THIS DEVICE</span></div><div id="wTbl" style="margin-top:12px"></div></div>`;
+    renderWatch();
   }
 
   /* ---------- detail ---------- */
   async function detail(sym) {
-    app.innerHTML = `<button class="back" id="bk">← Back</button><div class="page-loading"><div class="spinner"></div></div>`;
+    app.innerHTML = `<div style="margin-top:16px"><button class="back" id="bk">← MARKET</button></div><div class="page-loading">FETCHING ${esc(sym)} ▮▮▮</div>`;
     $('#bk').addEventListener('click', () => location.hash = '#/');
     try {
-      const [chart, fund, tech] = await Promise.all([
+      const [ch, fund] = await Promise.all([
         api(`/api/chart?symbol=${sym}&range=${range}`),
         api(`/api/fundamentals?symbol=${sym}`).catch(() => null),
-        api(`/api/batch?symbols=${sym}&range=1y`).catch(() => null),
       ]);
-      const t = tech && tech.quotes && tech.quotes[0] && tech.quotes[0].ok ? tech.quotes[0] : null;
-      paintDetail(chart, fund, t);
-      document.title = `${sym.replace('.NS', '').replace('.BO', '')} — live analysis | StockLens India`;
+      let tech = closesOf({ points: ch.points });
+      if (tech.length < 60) {
+        try {
+          const f = await sjson(`data/stocks/${sym}.json`);
+          if (f.ok) tech = f.daily.map((p) => p.c);
+        } catch {}
+      }
+      if (tech.length < 60) {
+        try {
+          const b = await api(`/api/batch?symbols=${sym}&range=1y`);
+          const q = (b.quotes || [])[0];
+          if (q && q.ok) tech = closesOf(q);
+        } catch {}
+      }
+      paintDetail(ch, fund, tech);
+      document.title = `${short(sym)} — Terminal | TickerTape India`;
     } catch {
-      document.title = 'StockLens India';
-      app.innerHTML = `<button class="back" id="bk2">← Back</button><div class="empty">Couldn't load ${esc(sym)} — check the symbol or try again.</div>`;
+      document.title = 'TickerTape India';
+      app.innerHTML = `<div style="margin-top:16px"><button class="back" id="bk2">← MARKET</button><div class="empty">NO DATA FOR ${esc(sym)} — TRY ANOTHER SYMBOL</div></div>`;
       $('#bk2').addEventListener('click', () => location.hash = '#/');
     }
   }
 
-  function rsiGauge(r) {
-    const v = r == null ? 0 : Math.max(0, Math.min(100, r));
-    const R = 54, C = Math.PI * R;
-    const col = r == null ? '#75809f' : r < 30 ? '#34d399' : r > 70 ? '#f87171' : '#fbbf24';
-    const lbl = r == null ? '—' : r < 30 ? 'Oversold' : r > 70 ? 'Overbought' : 'Neutral';
-    return `<div class="gauge-wrap"><svg class="gauge" width="130" height="78" viewBox="0 0 130 78">
-      <path d="M 11 70 A 54 54 0 0 1 119 70" fill="none" stroke="var(--surface-2)" stroke-width="11" stroke-linecap="round"/>
-      <path d="M 11 70 A 54 54 0 0 1 119 70" fill="none" stroke="${col}" stroke-width="11" stroke-linecap="round" stroke-dasharray="${(C * v / 100).toFixed(1)} ${C.toFixed(1)}"/>
-      <text x="65" y="58" text-anchor="middle" fill="var(--ink)" font-size="21" font-weight="700" font-family="Space Grotesk,sans-serif">${r ?? '—'}</text>
-    </svg><div><div class="gv" style="color:${col}">${lbl}</div><div class="gl">RSI · 14 period</div></div></div>`;
-  }
-
-  function paintDetail(d, fund, t) {
-    const m = d.meta;
-    const tcloses = t && t.closes && t.closes.length > 30 ? t.closes : d.points.map((p) => p.c);
+  function paintDetail(d, fund, tech) {
+    const m = d.meta, f = fund || {};
     const up = (m.changePct ?? 0) >= 0;
-    const [txt, cls] = verdict(m, tcloses);
-    const s20 = sma(tcloses, 20), s50 = sma(tcloses, 50), r = rsi(tcloses), mc = macd(tcloses), bb = boll(tcloses);
+    const r = rsi(tech), mc = macd(tech);
+    const s20 = sma(tech, 20), s50 = sma(tech, 50);
     const dayPos = (m.dayHigh && m.dayLow && m.dayHigh > m.dayLow && m.price != null)
-      ? Math.max(0, Math.min(100, ((m.price - m.dayLow) / (m.dayHigh - m.dayLow)) * 100)) : null;
+      ? ((m.price - m.dayLow) / (m.dayHigh - m.dayLow)) * 100 : null;
     const yPos = (m.week52High && m.week52Low && m.week52High > m.week52Low && m.price != null)
-      ? Math.max(0, Math.min(100, ((m.price - m.week52Low) / (m.week52High - m.week52Low)) * 100)) : null;
+      ? ((m.price - m.week52Low) / (m.week52High - m.week52Low)) * 100 : null;
     const on = watch.has(m.symbol);
-    const short = m.symbol.replace('.NS', '').replace('.BO', '');
-    const f = fund || {};
+    const dayChg = m.price != null && m.prevClose ? m.price - m.prevClose : null;
     app.innerHTML = `
-      <button class="back" id="bk">← Back</button>
-      <section class="detail-hero">
-        <div style="min-width:0">
-          <h1>${esc(short)}</h1>
-          <div class="ex">${esc(m.exchange || '')} · ${esc(m.symbol)} · ${esc(m.currency || 'INR')}</div>
-          <div class="sec-row">${f.sector ? `<span class="secpill">${esc(f.sector)}</span>` : ''}${f.industry ? `<span class="secpill">${esc(f.industry)}</span>` : ''}<span class="badge ${cls}">${txt}</span></div>
-          <div style="margin-top:12px"><span class="big-price">${inr(m.price)}</span>
-            <span class="big-chg ${up ? 'up' : 'down'}"> ${up ? '▲' : '▼'} ${num(Math.abs(m.changePct ?? 0))}% today</span></div>
+      <div style="margin-top:16px"><button class="back" id="bk">← MARKET</button></div>
+      <section class="mast">
+        <div class="mast-top">
+          <div style="min-width:0">
+            <h1>${esc(short(m.symbol))} <small>${esc(m.symbol)} · ${esc(m.exchange || '')}</small></h1>
+            <div class="tags">${f.sector ? `<span class="tag hot">${esc(f.sector.toUpperCase())}</span>` : ''}${f.industry ? `<span class="tag">${esc(f.industry.toUpperCase())}</span>` : ''}<span class="tag">${MODE.live ? '● LIVE' : '○ SNAPSHOT'}</span></div>
+          </div>
+          <div class="pxbox">
+            <div class="px">${inr(m.price)}</div>
+            <div class="ch ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${dayChg != null ? (dayChg >= 0 ? '+' : '') + inr(dayChg).replace('₹', '₹') : ''} (${dayChg != null && m.prevClose ? num((dayChg / m.prevClose) * 100) : num(m.changePct)}%)</div>
+            <div class="tm">${m.marketTime ? 'AS OF ' + new Date(m.marketTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ' IST' : ''}</div>
+            <button class="watch-btn ${on ? '' : 'off'}" id="wb">${on ? '★ WATCHING' : '☆ WATCH'}</button>
+          </div>
         </div>
-        <div class="hero-right"><button class="watch-btn ${on ? 'on' : ''}" id="wb">${on ? '★ Watching' : '☆ Add to watchlist'}</button>
-          <span style="font-size:11.5px;color:var(--ink-3)">${m.marketTime ? 'as of ' + new Date(m.marketTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ' IST' : ''}</span></div>
-      </section>
-      <div class="stat-tiles">
-        ${[['Prev close', inr(m.prevClose), ''], ['Day range', m.dayLow != null ? inr(m.dayLow, 0) + ' – ' + inr(m.dayHigh, 0) : '—', dayPos != null ? dayPos.toFixed(0) + '% up the day' : ''],
-           ['52-week range', m.week52Low != null ? inr(m.week52Low, 0) + ' – ' + inr(m.week52High, 0) : '—', yPos != null ? yPos.toFixed(0) + '% up the range' : ''],
-           ['Market cap', bigInr(f.marketCap), f.marketCap ? 'total equity value' : ''],
-           ['P/E (TTM)', f.peTrailing != null ? num(f.peTrailing) + '×' : '—', f.peForward != null ? 'forward ' + num(f.peForward) + '×' : ''],
-           ['P/B', f.pb != null ? num(f.pb) + '×' : '—', f.bookValue != null ? 'book ' + inr(f.bookValue, 0) : '']]
-          .map(([l, v, s]) => `<div class="tile"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`).join('')}
-      </div>
-      <div class="ranges">${RANGES.map(([v, l]) => `<button class="range ${v === range ? 'active' : ''}" data-r="${v}">${l}</button>`).join('')}</div>
-      <div class="toggles">
-        <button class="toggle ${show.sma ? 'on' : ''}" data-t="sma">SMA 20/50</button>
-        <button class="toggle ${show.bb ? 'on' : ''}" data-t="bb">Bollinger</button>
-        <button class="toggle ${show.vol ? 'on' : ''}" data-t="vol">Volume</button>
-      </div>
-      <div class="chart-wrap"><canvas id="chart"></canvas><div class="chart-tip" id="ctip"></div>
-        <div class="chart-legend"><span><i style="background:#34d399"></i>up move</span><span><i style="background:#818cf8"></i>SMA 20</span><span><i style="background:#fbbf24"></i>SMA 50</span><span>hover the chart for values</span></div></div>
-      <div class="panels">
-        <div class="panel"><h3>Momentum</h3><p class="psub">RSI · MACD · trend vs moving averages</p>
-          ${rsiGauge(r)}
-          <div class="kv"><span class="k">MACD line</span><span class="v">${mc ? num(mc.line) : '—'}</span></div>
-          <div class="kv"><span class="k">Signal line</span><span class="v">${mc ? num(mc.signal) : '—'}</span></div>
-          <div class="kv"><span class="k">Histogram</span><span class="v ${mc ? (mc.hist >= 0 ? 'up' : 'down') : ''}">${mc ? (mc.hist >= 0 ? '+' : '') + num(mc.hist) : '—'}</span></div>
-          <div class="kv"><span class="k">Price vs SMA 20</span><span class="v">${s20 != null && m.price != null ? (m.price >= s20 ? 'above ▲' : 'below ▼') + ' · ' + inr(s20, 0) : '—'}</span></div>
-          <div class="kv"><span class="k">SMA 20 vs 50</span><span class="v">${s20 != null && s50 != null ? (s20 >= s50 ? 'golden tilt ▲' : 'weak tilt ▼') : '—'}</span></div>
-          ${bb ? `<div class="kv"><span class="k">Bollinger (20,2)</span><span class="v">${inr(bb.lo, 0)} – ${inr(bb.up, 0)}</span></div>` : ''}
+        <div class="stats">
+          ${[['OPEN', d.points.length && d.points[0].o != null ? inr(d.points[0].o) : '—', ''],
+             ['PREV CLOSE', inr(m.prevClose), ''],
+             ['DAY LOW–HIGH', m.dayLow != null ? inr(m.dayLow, 0) + ' / ' + inr(m.dayHigh, 0) : '—', dayPos != null ? dayPos.toFixed(0) + '% up the day' : ''],
+             ['52W LOW–HIGH', m.week52Low != null ? inr(m.week52Low, 0) + ' / ' + inr(m.week52High, 0) : '—', yPos != null ? yPos.toFixed(0) + '% up the range' : ''],
+             ['MKT CAP', bigInr(f.marketCap ?? m.marketCap), ''],
+             ['P/E TTM', f.peTrailing != null ? num(f.peTrailing) + '×' : '—', f.peForward != null ? 'FWD ' + num(f.peForward) + '×' : ''],
+             ['VOLUME', m.volume != null ? num(m.volume, 0) : (d.points.length ? num(d.points[d.points.length - 1].v, 0) : '—'), '']]
+            .map(([l, v, s]) => `<div class="stat"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`).join('')}
         </div>
-        <div class="panel"><h3>Valuation &amp; quality</h3><p class="psub">trailing-twelve-month fundamentals</p>
-          <div class="kv"><span class="k">EPS (TTM)</span><span class="v">${f.epsTrailing != null ? inr(f.epsTrailing) : '—'}</span></div>
-          <div class="kv"><span class="k">Dividend yield</span><span class="v">${f.dividendYield != null ? num(f.dividendYield * 100) + '%' : '—'}</span></div>
-          <div class="kv"><span class="k">Beta</span><span class="v">${f.beta != null ? num(f.beta) + (f.beta > 1 ? ' · aggressive' : ' · defensive') : '—'}</span></div>
-          <div class="kv"><span class="k">ROE</span><span class="v">${f.roe != null ? num(f.roe * 100) + '%' : '—'}</span></div>
-          <div class="kv"><span class="k">Profit margin</span><span class="v">${f.profitMargin != null ? num(f.profitMargin * 100) + '%' : '—'}</span></div>
-          <div class="kv"><span class="k">Shares outstanding</span><span class="v">${f.sharesOut != null ? num(f.sharesOut, 0) : '—'}</span></div>
-          <div class="kv"><span class="k">Day volume</span><span class="v">${m.volume != null ? num(m.volume, 0) : '—'}</span></div>
+        <div class="chart-bar">
+          ${RANGES.map(([v, l]) => `<button class="range ${v === range ? 'on' : ''}" data-r="${v}">${l}</button>`).join('')}
+          <span style="flex:1"></span>
+          <button class="tgl ${show.ma ? 'on' : ''}" data-t="ma">MA 20/50</button>
+          <button class="tgl ${show.bb ? 'on' : ''}" data-t="bb">BOLL</button>
+          <button class="tgl ${show.vol ? 'on' : ''}" data-t="vol">VOL</button>
         </div>
-        <div class="panel"><h3>Price position</h3><p class="psub">where the price sits in its ranges</p>
-          <div class="kv"><span class="k">Day position</span><span class="v">${dayPos != null ? dayPos.toFixed(0) + '%' : '—'}</span></div>
-          ${dayPos != null ? `<div class="rangebar"><i style="left:calc(${dayPos.toFixed(1)}% - 6px)"></i></div>` : ''}
-          <div class="kv"><span class="k">52-week position</span><span class="v">${yPos != null ? yPos.toFixed(0) + '%' : '—'}</span></div>
-          ${yPos != null ? `<div class="rangebar"><i style="left:calc(${yPos.toFixed(1)}% - 6px)"></i></div>` : ''}
-          <div class="kv"><span class="k">Points on chart</span><span class="v">${d.points.length}</span></div>
+        <div class="chart-box"><canvas id="chart"></canvas><div class="chart-tip" id="ctip"></div></div>
+        <div class="chart-meta"><span><i style="background:var(--up)"></i>BULL CANDLE</span><span><i style="background:var(--down)"></i>BEAR CANDLE</span><span><i style="background:var(--accent)"></i>MA 20</span><span>HOVER FOR O/H/L/C</span></div>
+        <div class="cols2" style="padding:18px">
+          <div><div class="sec-head" style="margin:0 0 6px"><h2>TECHNICALS</h2><span class="sub">DAILY CLOSES · ${tech.length} PTS</span></div>
+            <div class="gauge-row"><div class="mono" style="font-size:30px;font-weight:700;color:${r == null ? 'var(--ink-3)' : r < 30 ? 'var(--up)' : r > 70 ? 'var(--down)' : 'var(--accent-ink)'}">${r ?? '—'}</div>
+            <div><div style="font-weight:800;font-size:13px">${r == null ? 'NO SIGNAL' : r < 30 ? 'OVERSOLD — BOUNCE ZONE' : r > 70 ? 'OVERBOUGHT — CAUTION' : 'NEUTRAL MOMENTUM'}</div>
+            <div class="mono" style="font-size:11px;color:var(--ink-3)">RSI · 14 PERIOD</div></div></div>
+            <div class="kv"><span class="k">MACD / signal</span><span class="v">${mc ? num(mc.line) + ' / ' + num(mc.signal) : '—'}</span></div>
+            <div class="kv"><span class="k">Histogram</span><span class="v ${mc ? (mc.hist >= 0 ? 'up' : 'down') : ''}">${mc ? (mc.hist >= 0 ? '+' : '') + num(mc.hist) : '—'}</span></div>
+            <div class="kv"><span class="k">Price vs MA20</span><span class="v">${s20 != null && m.price != null ? inr(s20, 0) + (m.price >= s20 ? ' · ABOVE ▲' : ' · BELOW ▼') : '—'}</span></div>
+            <div class="kv"><span class="k">MA20 vs MA50</span><span class="v">${s20 != null && s50 != null ? (s20 >= s50 ? 'GOLDEN ▲' : 'WEAK ▼') : '—'}</span></div>
+          </div>
+          <div><div class="sec-head" style="margin:0 0 6px"><h2>FUNDAMENTALS</h2><span class="sub">TTM</span></div>
+            <div class="kv"><span class="k">EPS</span><span class="v">${f.epsTrailing != null ? inr(f.epsTrailing) : '—'}</span></div>
+            <div class="kv"><span class="k">P/B</span><span class="v">${f.pb != null ? num(f.pb) + '×' : '—'}</span></div>
+            <div class="kv"><span class="k">Dividend yield</span><span class="v">${f.dividendYield != null ? num(f.dividendYield * 100) + '%' : '—'}</span></div>
+            <div class="kv"><span class="k">Beta</span><span class="v">${f.beta != null ? num(f.beta) + (f.beta > 1 ? ' · HOT' : ' · CALM') : '—'}</span></div>
+            <div class="kv"><span class="k">ROE</span><span class="v">${f.roe != null ? num(f.roe * 100) + '%' : '—'}</span></div>
+            <div class="kv"><span class="k">Profit margin</span><span class="v">${f.profitMargin != null ? num(f.profitMargin * 100) + '%' : '—'}</span></div>
+            <div class="kv"><span class="k">Day position</span><span class="v">${dayPos != null ? dayPos.toFixed(0) + '%' : '—'}</span></div>
+            ${dayPos != null ? `<div class="rbar"><i style="left:calc(${dayPos.toFixed(1)}% - 6px)"></i></div>` : ''}
+            <div class="kv"><span class="k">52W position</span><span class="v">${yPos != null ? yPos.toFixed(0) + '%' : '—'}</span></div>
+            ${yPos != null ? `<div class="rbar"><i style="left:calc(${yPos.toFixed(1)}% - 6px)"></i></div>` : ''}
+          </div>
         </div>
-        ${f.summary ? `<div class="panel about"><h3>About ${esc(short)}</h3><p class="psub">${esc([f.sector, f.industry].filter(Boolean).join(' · '))}${f.employees ? ' · ' + num(f.employees, 0) + ' employees' : ''}</p><p>${esc(f.summary.length > 900 ? f.summary.slice(0, 900) + '…' : f.summary)}</p>${f.website ? `<a href="${esc(f.website.startsWith('http') ? f.website : 'https://' + f.website)}" target="_blank" rel="noopener">Official website ↗</a>` : ''}</div>` : ''}
-      </div>`;
+        ${f.summary ? `<div class="about" style="padding:0 18px 18px"><div class="sec-head" style="margin:0 0 10px"><h2>FILE</h2><span class="sub">${esc([f.sector, f.industry].filter(Boolean).join(' · ').toUpperCase())}${f.employees ? ' · ' + num(f.employees, 0) + ' STAFF' : ''}</span></div><p>${esc(f.summary)}</p>${f.website ? `<a href="${esc(f.website.startsWith('http') ? f.website : 'https://' + f.website)}" target="_blank" rel="noopener">COMPANY SITE ↗</a>` : ''}</div>` : ''}
+      </section>`;
     $('#bk').addEventListener('click', () => location.hash = '#/');
     $('#wb').addEventListener('click', (e) => {
       const now = watch.toggle(m.symbol);
-      e.target.textContent = now ? '★ Watching' : '☆ Add to watchlist';
-      e.target.classList.toggle('on', now);
+      e.target.textContent = now ? '★ WATCHING' : '☆ WATCH';
+      e.target.classList.toggle('off', !now);
     });
     app.querySelectorAll('.range').forEach((b) => b.addEventListener('click', async () => {
       range = b.dataset.r;
-      app.querySelectorAll('.range').forEach((x) => x.classList.toggle('active', x === b));
+      app.querySelectorAll('.range').forEach((x) => x.classList.toggle('on', x === b));
       try {
         const nd = await api(`/api/chart?symbol=${m.symbol}&range=${range}`);
         d.points = nd.points; d.meta = { ...d.meta, ...nd.meta };
-        paintDetail(d, fund, t);
+        paintDetail(d, fund, tech);
       } catch {}
     }));
-    app.querySelectorAll('.toggle').forEach((b) => b.addEventListener('click', () => {
+    app.querySelectorAll('.tgl').forEach((b) => b.addEventListener('click', () => {
       show[b.dataset.t] = !show[b.dataset.t];
       b.classList.toggle('on', show[b.dataset.t]);
       const cv = $('#chart'); if (cv) drawChart(cv, d.points, $('#ctip'));
@@ -590,63 +594,71 @@
     window.addEventListener('resize', () => { const c2 = $('#chart'); if (c2) { drawChart(c2, d.points, $('#ctip')); bindCrosshair(c2, $('#ctip')); } }, { once: true });
   }
 
-  /* ---------- search ---------- */
+  /* ---------- search / theme / nav / router ---------- */
   function initSearch() {
     const inp = $('#search'), box = $('#results');
     let t;
     inp.addEventListener('input', () => {
       clearTimeout(t);
       const q = inp.value.trim();
-      if (q.length < 2) { box.classList.remove('open'); return; }
+      if (q.length < 1) { box.classList.remove('open'); return; }
       t = setTimeout(async () => {
         try {
           const d = await api('/api/search?q=' + encodeURIComponent(q));
           box.innerHTML = d.results.length
-            ? d.results.map((r) => `<button data-sym="${esc(r.symbol)}"><span class="sym">${esc(r.symbol.replace('.NS', '').replace('.BO', ''))}</span><span>${esc(r.name)}</span><span class="ex">${esc(r.exchange)}</span></button>`).join('')
-            : '<button disabled>No matches — try another name</button>';
+            ? d.results.map((r) => `<button data-sym="${esc(r.symbol)}"><b>${esc(short(r.symbol))}</b><span>${esc(r.name)}</span><span class="ex">${esc(r.exchange || '')}</span></button>`).join('')
+            : '<button disabled>NO MATCHES</button>';
           box.classList.add('open');
           box.querySelectorAll('[data-sym]').forEach((b) => b.addEventListener('click', () => {
             box.classList.remove('open'); inp.value = ''; location.hash = '#/' + b.dataset.sym;
           }));
         } catch {}
-      }, 280);
+      }, 250);
     });
     document.addEventListener('click', (e) => { if (!e.target.closest('.search')) box.classList.remove('open'); });
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const f = box.querySelector('[data-sym]'); if (f) f.click(); } });
   }
-
-  /* ---------- theme ---------- */
   function initTheme() {
-    const btn = $('#themeBtn');
     const sync = () => {
-      const light = document.documentElement.dataset.theme === 'light';
-      btn.textContent = light ? '◑' : '◐';
       const meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.content = light ? '#f3f5fc' : '#070b16';
+      if (meta) meta.content = document.documentElement.dataset.theme === 'dark' ? '#0c0d10' : '#f6f4ec';
     };
     sync();
-    btn.addEventListener('click', () => {
-      const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    $('#themeBtn').addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
       document.documentElement.dataset.theme = next;
-      try { localStorage.setItem('sl-theme', next); } catch {}
+      try { localStorage.setItem('tt-theme', next); } catch {}
       sync();
-      if (location.hash.startsWith('#/')) route();
+      const cv = $('#chart');
+      if (cv && cv._geom) drawChart(cv, cv._geom.points, $('#ctip'));
     });
   }
-
-  /* ---------- router ---------- */
-  function route() {
-    const m = location.hash.match(/^#\/(.+)$/);
-    if (m) detail(decodeURIComponent(m[1]).toUpperCase());
-    else { home(); document.title = 'StockLens India — Live NSE/BSE Stock Analysis'; }
-    window.scrollTo(0, 0);
+  function setNav(key) {
+    document.querySelectorAll('#mainNav button').forEach((b) => b.classList.toggle('on', b.dataset.nav === key));
+  }
+  function route(keep = false) {
+    const h = location.hash;
+    document.body.classList.remove('nav-open');
+    if (h === '#/screener') { setNav('screener'); screenerPage(); }
+    else if (h === '#/watch') { setNav('watch'); watchPage(); }
+    else {
+      const m = h.match(/^#\/(.+)$/);
+      if (m && m[1]) { setNav(''); detail(decodeURIComponent(m[1]).toUpperCase()); }
+      else { setNav('market'); marketPage(); }
+    }
+    document.title = 'TickerTape India — NSE/BSE Terminal';
+    if (!keep) window.scrollTo(0, 0);
   }
 
   $('#homeBtn').addEventListener('click', () => location.hash = '#/');
-  window.addEventListener('hashchange', route);
+  document.querySelectorAll('#mainNav button').forEach((b) => b.addEventListener('click', () => {
+    location.hash = b.dataset.nav === 'market' ? '#/' : '#/' + b.dataset.nav;
+  }));
+  $('#menuBtn').addEventListener('click', () => document.body.classList.toggle('nav-open'));
+  window.addEventListener('hashchange', () => route());
   initSearch();
   initTheme();
   route();
-  loadTape();
-  setInterval(loadTape, 5 * 60 * 1000);
+  loadChrome();
+  setInterval(loadChrome, 5 * 60 * 1000);
 })();
